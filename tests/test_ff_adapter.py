@@ -131,5 +131,22 @@ class AdapterTests(unittest.TestCase):
         finally:
             if self.module.cookie_path().exists(): self.module.cookie_path().unlink()
 
+    def test_json_cookie_save_and_login_check(self):
+        import json
+        exported=json.dumps([{'domain':'.munpia.com','name':'session','value':'synthetic-json-secret',
+                              'hostOnly':False,'path':'/','session':True}],indent=2)
+        conf=self.module.config();conf['cookie']=exported
+        try:
+            self.assertTrue(self.send('save',arg1=json.dumps(conf)).json['cookie_saved'])
+            saved=self.module.read_cookie()
+            self.assertEqual(json.loads(saved)[0]['value'],'synthetic-json-secret')
+            self.assertNotIn('synthetic-json-secret',self.client.get('/munpia_free/basic/setting').get_data(as_text=True))
+            with patch('munpia_free.mod_basic.Client') as client:
+                client.return_value.login_status.return_value=True
+                self.assertTrue(self.send('check_login',arg1=exported).json['authenticated'])
+                client.assert_called_once_with(cookie=saved)
+        finally:
+            if self.module.cookie_path().exists(): self.module.cookie_path().unlink()
+
 
 if __name__ == '__main__': unittest.main()

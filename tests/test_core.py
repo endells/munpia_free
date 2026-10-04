@@ -2,6 +2,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+from unittest.mock import patch
 import tempfile
 import threading
 import unittest
@@ -205,6 +206,46 @@ class Tests(unittest.TestCase):
         state = self.run_engine(self.engine())
         self.assertEqual(state['completed'],2)
         self.assertFalse(any(p.endswith('/10') or p.endswith('/20') for p,q in self.calls))
+
+    def test_multiline_json_cookies_domain_path_and_expiry(self):
+        base={'domain':'.munpia.com','hostOnly':False,'path':'/','name':'sid','value':'root-token','expirationDate':2000}
+        items=[base, dict(base,path='/api/member',value='member-token'),
+               dict(base,domain='m.munpia.com',hostOnly=True,name='mobile',value='yes',expirationDate=-1),
+               dict(base,domain='www.munpia.com',name='www'),
+               dict(base,domain='munpia.com',hostOnly=True,name='hostonly'),
+               dict(base,domain='.munpia.com.evil.test',name='other'),
+               dict(base,name='expired',expirationDate=500),
+               dict(base,name='partition',partitionKey={'topLevelSite':'https://other.test'})]
+        with patch.object(c.time,'time',return_value=1000):
+            normalized=c.normalize_cookie(json.dumps(items,indent=2))
+            self.assertEqual(c.normalize_cookie(json.dumps({'cookies':items})),normalized)
+            self.assertEqual(c.normalize_cookie(normalized),normalized)
+            self.assertEqual(c.cookie_header(normalized,'/api/member/my-info-simple'),'sid=member-token; sid=root-token; mobile=yes')
+            self.assertEqual(c.cookie_header(normalized,'/api/membership'),'sid=root-token; mobile=yes')
+            client=c.Client(cookie=json.dumps(items,indent=2))
+            requests=[]
+            class Opener:
+                def open(self,req,timeout):
+                    requests.append(req)
+                    return io.BytesIO(b'{"login":true}')
+            client.opener=Opener()
+            self.assertTrue(client.login_status())
+            self.assertEqual(requests[0].get_header('Cookie'),'sid=member-token; sid=root-token; mobile=yes')
+        with patch.object(c.time,'time',return_value=3000):
+            self.assertEqual(c.cookie_header(normalized,'/api/member/my-info-simple'),'mobile=yes')
+
+    def test_json_cookie_invalid_inputs_do_not_expose_values(self):
+        base={'domain':'.munpia.com','name':'sid','value':'synthetic-private-value','path':'/'}
+        bad=['[{"value":"synthetic-private-value"', json.dumps({'wrong':[base]}),
+             json.dumps([dict(base,value='synthetic-private-value\r\nInjected: yes')]),
+             json.dumps([dict(base,value='synthetic-private-value; extra=value')]),
+             json.dumps([dict(base,domain='unrelated.test')]),json.dumps([dict(base,hostOnly='false')]),
+             json.dumps([dict(base,expirationDate='bad')]),json.dumps([dict(base,path='relative')]),
+             json.dumps([{'name':'sid','value':'synthetic-private-value'}])]
+        for value in bad:
+            with self.assertRaises(c.MunpiaError) as ctx:
+                c.normalize_cookie(value)
+            self.assertNotIn('synthetic-private-value',str(ctx.exception))
 
 
 if __name__ == '__main__':

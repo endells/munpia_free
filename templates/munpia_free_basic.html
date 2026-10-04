@@ -8,7 +8,7 @@
 @media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
 </style>
 <div class="mf">
-<h3>문피아 무료회차 <small style="font-size:13px;display:inline">v0.2.0</small></h3>
+<h3>문피아 무료회차 <small style="font-size:13px;display:inline">v0.2.1</small></h3>
 <div class="mf-actions">
 <a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/setting">설정</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/manual">회차 선택</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/status">진행 상황</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/history">다운로드 이력</a>
 </div>
@@ -16,12 +16,13 @@
 {% if page == 'setting' %}
 <div class="mf-card">
 <label for="munpia_cookie">문피아 로그인 쿠키 (선택)</label>
-<input id="munpia_cookie" type="password" autocomplete="new-password" spellcheck="false" placeholder="Cookie 요청 헤더 값: 이름=값; 이름=값">
+<textarea id="munpia_cookie" rows="8" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cookie-Editor 등의 JSON 내보내기 결과를 여러 줄 그대로 붙여넣으세요.&#10;기존 형식도 가능: 이름=값; 이름=값"></textarea>
+<small>JSON 배열 또는 {"cookies": [...]} 형식을 지원합니다. 최대 256KB이며 저장 후 입력 내용은 지워집니다.</small>
 <small id="cookie_saved">{% if cookie_saved %}저장된 쿠키 있음 · 빈칸으로 저장하면 기존 쿠키를 유지합니다.{% else %}저장된 쿠키 없음 · 일부 무료 작품은 6화부터 로그인이 필요합니다.{% endif %}</small>
 <label class="mf-check"><input id="clear_cookie" type="checkbox"> 저장 시 기존 쿠키 삭제</label>
 <div class="mf-actions"><button id="check_login" type="button" class="btn btn-outline-primary">로그인 확인</button></div>
 <p id="login_result" role="status"></p>
-<details><summary>쿠키 가져오는 방법 (PC 브라우저)</summary><ol><li>브라우저에서 m.munpia.com에 로그인하고 작품 페이지를 여세요.</li><li>F12 → Network(네트워크)를 열고 페이지를 새로고침하세요.</li><li>m.munpia.com으로 보내는 요청을 선택하고 Headers → Request Headers의 Cookie 값을 복사하세요. Set-Cookie가 아닙니다.</li><li>위 칸에 붙여넣고 로그인 확인 → 설정 저장을 누르세요.</li></ol><small>쿠키는 계정 인증정보입니다. 채팅이나 GitHub에 올리지 말고 FF 설정에만 입력하세요. 저장된 값은 화면에 다시 표시하지 않습니다.</small></details>
+<details><summary>확장프로그램으로 쿠키 가져오기</summary><ol><li>Chrome에서 m.munpia.com에 로그인하고 작품 페이지를 여세요.</li><li>Cookie-Editor 등 사용 중인 쿠키 확장프로그램에서 현재 사이트 쿠키를 JSON 형식으로 내보내기/복사하세요.</li><li>처음의 [부터 마지막 ]까지 여러 줄 전체를 위 칸에 붙여넣으세요. 줄바꿈을 지울 필요가 없습니다.</li><li>로그인 확인 → 설정 저장을 누르세요.</li></ol><small>모바일 문피아에 적용되는 도메인·경로·만료 조건에 맞춰 사용합니다. www.munpia.com이나 nssl.munpia.com 전용 쿠키만 있으면 다시 모바일 페이지에서 내보내세요.</small><small>기존 방식도 가능: F12 → Network → 요청의 Headers → Request Headers → Cookie 값을 복사합니다. Set-Cookie는 사용하지 않습니다.</small><small>쿠키는 계정 인증정보입니다. 채팅이나 GitHub에 올리지 말고 FF 설정에만 입력하세요. 저장된 값은 화면에 다시 표시하지 않습니다.</small></details>
 <label for="titles">자동 수집할 작품</label><textarea id="titles" rows="5" placeholder="작품 주소 또는 번호를 한 줄에 하나씩">{{ config.titles }}</textarea><small>예: https://m.munpia.com/novel/detail/599040 · PC 주소도 사용할 수 있습니다.</small>
 <label for="download_path">다운로드 경로</label>
 <div class="mf-path"><input id="download_path" type="text" value="{{ config.download_path }}"><button id="select_download_path" type="button" class="btn btn-outline-primary">경로 선택</button></div>

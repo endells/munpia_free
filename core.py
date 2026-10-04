@@ -5,6 +5,7 @@ import hashlib
 import html
 from html.parser import HTMLParser
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -33,8 +34,60 @@ class LoginRequired(MunpiaError):
 
 
 def normalize_cookie(value):
-    if not isinstance(value, str) or len(value) > 16384 or re.search(r'[^\x20-\x7e]', value):
-        raise MunpiaError('쿠키는 Cookie 요청 헤더의 값을 줄바꿈 없이 입력하세요. 최대 16KB입니다.')
+    if not isinstance(value, str) or len(value.encode('utf-8')) > 262144:
+        raise MunpiaError('쿠키 JSON은 최대 256KB까지 입력할 수 있습니다.')
+    value = value.lstrip('\ufeff').strip()
+    if value.startswith(('[', '{')):
+        try:
+            data = json.loads(value)
+        except (ValueError, RecursionError):
+            raise MunpiaError('쿠키 JSON을 읽을 수 없습니다. JSON 내보내기 결과 전체를 붙여넣으세요.') from None
+        if isinstance(data, dict):
+            data = data.get('cookies')
+        if not isinstance(data, list) or not data or len(data) > 1000:
+            raise MunpiaError('쿠키 JSON은 쿠키 배열 또는 cookies 배열을 가진 객체여야 합니다. 최대 1000개입니다.')
+        accepted = {}
+        for item in data:
+            if not isinstance(item, dict) or not isinstance(item.get('domain'), str):
+                raise MunpiaError('JSON 쿠키에 domain, name, value 항목이 필요합니다.')
+            domain = item['domain'].lower().lstrip('.')
+            host_only = item.get('hostOnly', not item['domain'].startswith('.'))
+            if type(host_only) is not bool:
+                raise MunpiaError('JSON 쿠키의 hostOnly 형식이 잘못되었습니다.')
+            # Match the mobile HTTPS host as a browser would; never promote www/nssl cookies.
+            if domain not in ('munpia.com', 'm.munpia.com') or (host_only and domain != 'm.munpia.com'):
+                continue
+            if item.get('partitionKey') is not None:
+                continue
+            name, val, path = item.get('name'), item.get('value'), item.get('path', '/')
+            if not isinstance(name, str) or not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name):
+                raise MunpiaError('JSON 쿠키의 이름 형식이 잘못되었습니다.')
+            if not isinstance(val, str) or re.search(r'[^\x20-\x7e]|;', val):
+                raise MunpiaError('JSON 쿠키 값에 사용할 수 없는 문자가 있습니다.')
+            if not isinstance(path, str) or not path.startswith('/') or re.search(r'[\x00-\x20\x7f]', path):
+                raise MunpiaError('JSON 쿠키의 path 형식이 잘못되었습니다.')
+            expiry = item.get('expirationDate', item.get('expires'))
+            if item.get('session') is True or expiry is None or expiry == -1:
+                expiry = None
+            elif type(expiry) not in (int, float) or not math.isfinite(expiry):
+                raise MunpiaError('JSON 쿠키 만료일은 숫자 형식이어야 합니다.')
+            elif expiry <= time.time():
+                continue
+            cookie = {'name': name, 'value': val, 'domain': domain,
+                      'hostOnly': host_only, 'path': path, 'expirationDate': expiry}
+            accepted[(name, domain, path)] = cookie
+        if not accepted:
+            raise MunpiaError('모바일 문피아에 사용할 쿠키가 없습니다. m.munpia.com에 로그인한 뒤 다시 내보내세요. 다른 도메인·만료 쿠키는 제외됩니다.')
+        result = json.dumps(list(accepted.values()), ensure_ascii=True, separators=(',', ':'))
+        if len(result) > 262144:
+            raise MunpiaError('변환된 쿠키 JSON이 너무 큽니다. 문피아 사이트의 쿠키만 내보내세요.')
+        return result
+    return normalize_cookie_header(value)
+
+
+def normalize_cookie_header(value):
+    if len(value) > 16384 or re.search(r'[^\x20-\x7e]', value):
+        raise MunpiaError('일반 Cookie 헤더는 줄바꿈 없이 최대 16KB입니다. 여러 줄은 JSON 형식으로 입력하세요.')
     value = value.strip()
     if value.lower().startswith('cookie:'):
         value = value[7:].strip()
@@ -48,6 +101,21 @@ def normalize_cookie(value):
         if not any(part.strip() for part in value.split(';')):
             raise MunpiaError('쿠키 이름과 값이 없습니다.')
     return value
+
+
+def cookie_header(normalized, request_path):
+    if not normalized.startswith('['):
+        return normalized
+    # Keep domain/path/expiry metadata on disk instead of flattening an export forever.
+    matches = []
+    for item in json.loads(normalized):
+        path, expiry = item['path'], item['expirationDate']
+        if expiry is not None and expiry <= time.time():
+            continue
+        if request_path == path or (request_path.startswith(path) and (path.endswith('/') or request_path[len(path):].startswith('/'))):
+            matches.append(item)
+    matches.sort(key=lambda item: -len(item['path']))
+    return normalize_cookie_header('; '.join(item['name'] + '=' + item['value'] for item in matches))
 
 
 def response_error(payload, http_status=None):
@@ -178,8 +246,9 @@ class Client:
                     'User-Agent': 'Mozilla/5.0 (compatible; MunpiaFreeFF/0.2)',
                     'Accept': 'application/json', 'Referer': self.BASE + '/',
                 }
-                if self.cookie:
-                    headers['Cookie'] = self.cookie
+                header = cookie_header(self.cookie, path)
+                if header:
+                    headers['Cookie'] = header
                 req = urllib.request.Request(url, headers=headers)
                 try:
                     with self.opener.open(req, timeout=20) as response:
