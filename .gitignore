@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.db
+*.db-*
+*.lock
+*.log
+*.epub
+downloads/
+cookies*
+.env*
+.venv/

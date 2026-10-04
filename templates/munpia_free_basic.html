@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.mf{max-width:1100px;margin:18px auto;padding:0 12px}.mf-card{border:1px solid #aaa5;border-radius:8px;padding:18px;margin-bottom:18px}.mf label{display:block;margin:12px 0 5px}.mf input[type=text],.mf input[type=number],.mf textarea{width:100%;padding:8px;border:1px solid #9998;border-radius:4px}.mf small{display:block;opacity:.75;margin:5px 0}.mf-actions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.mf table{width:100%;border-collapse:collapse}.mf th,.mf td{padding:8px;border-bottom:1px solid #aaa4;text-align:left;word-break:break-word}.mf-note{padding:10px;border-left:3px solid #4a9b70;margin:12px 0}.mf-scroll{overflow:auto}.mf-progress{height:12px;background:#aaa4;border-radius:6px;overflow:hidden}.mf-progress div{height:100%;background:#499d79;width:0}.mf-error{color:#db5959}.mf-check{display:flex!important;gap:8px;align-items:center}.mf-check input{width:auto!important}
+</style>
+<div class="mf">
+<h3>문피아 무료회차 <small style="font-size:13px;display:inline">v0.1.0</small></h3>
+<div class="mf-actions">
+<a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/setting">설정</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/manual">회차 선택</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/status">진행 상황</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/history">다운로드 이력</a>
+</div>
+<p id="mf-message" role="status"></p>
+{% if page == 'setting' %}
+<div class="mf-card">
+<label for="titles">자동 수집할 작품</label><textarea id="titles" rows="5" placeholder="작품 주소 또는 번호를 한 줄에 하나씩">{{ config.titles }}</textarea><small>예: https://m.munpia.com/novel/detail/599040 · PC 주소도 사용할 수 있습니다.</small>
+<label for="download_path">다운로드 폴더</label><input id="download_path" type="text" value="{{ config.download_path }}"><small>FF 컨테이너 내부 경로입니다. NAS에 연결된 볼륨의 쓰기 가능한 폴더를 지정하세요.</small>
+<label for="max_per_title">작품당 한 번에 받을 최대 회차 수</label><input id="max_per_title" type="number" min="1" max="1000" value="{{ config.max_per_title }}"><small>이미 받은 회차는 제외합니다. 수동 선택에도 적용되며 초과분은 다음 실행에서 받습니다.</small>
+<label for="request_delay">요청 사이 간격 (초)</label><input id="request_delay" type="number" min="1" max="60" step="0.5" value="{{ config.request_delay }}">
+<label class="mf-check"><input id="make_epub" type="checkbox" {% if config.make_epub %}checked{% endif %}> 받은 회차를 EPUB 합본으로 만들기</label>
+<label class="mf-check"><input id="include_author_comment" type="checkbox" {% if config.include_author_comment %}checked{% endif %}> 작가의 말 포함</label>
+<label for="basic_interval">자동 수집 간격 (분)</label><input id="basic_interval" type="number" min="10" max="10080" value="{{ config.basic_interval }}">
+<label class="mf-check"><input id="basic_auto_start" type="checkbox" {% if config.basic_auto_start %}checked{% endif %}> 자동 수집 사용 (FF 재시작 후에도 유지)</label>
+<div class="mf-actions"><button id="save" class="btn btn-primary">설정 저장</button><button id="run" class="btn btn-success">저장된 목록 지금 받기</button></div>
+<div class="mf-note">공개 무료 회차 전용입니다. TXT는 항상 저장되며, EPUB은 받은 회차만 합칩니다. 이 버전은 표지·삽화를 내려받지 않고 삽화 위치에 표시만 남깁니다.</div>
+</div>
+{% elif page == 'manual' %}
+<div class="mf-card"><label for="novel_url">작품 주소 또는 번호</label><input id="novel_url" type="text" placeholder="https://m.munpia.com/novel/detail/599040"><div class="mf-actions"><button id="analyze" class="btn btn-primary">회차 분석</button><button id="download" class="btn btn-success" disabled>선택 회차 받기</button></div><h5 id="book_title"></h5><label class="mf-check"><input id="select_all" type="checkbox"> 받을 수 있는 회차 전체 선택</label><div class="mf-scroll"><table><thead><tr><th>선택</th><th>번호</th><th>회차</th><th>상태</th></tr></thead><tbody id="episodes"></tbody></table></div></div>
+{% elif page == 'history' %}
+<div class="mf-card"><div class="mf-actions"><button id="refresh" class="btn btn-secondary">새로고침</button><button id="prev" class="btn btn-outline-secondary">이전</button><span id="page_no"></span><button id="next" class="btn btn-outline-secondary">다음</button></div><div class="mf-scroll"><table><thead><tr><th>작품 / 회차</th><th>결과</th><th>경로 또는 오류</th><th>시각</th></tr></thead><tbody id="history"></tbody></table></div></div>
+{% endif %}
+{% if page != 'history' %}
+<div class="mf-card"><h5>작업 상태</h5><p id="state">확인 중</p><p id="counts"></p><div class="mf-progress"><div id="bar"></div></div><small id="schedule"></small><div class="mf-actions"><button id="stop" class="btn btn-outline-danger" disabled>중지</button></div><small>중지 시 완료된 파일은 보존됩니다. 이미 받은 파일이 없거나 손상됐다면 다음 실행에서 다시 받습니다.</small></div>
+{% endif %}
+</div>
+<script>
+(function(){
+'use strict';
+var endpoint={{ ('/' + package_name + '/ajax/basic/command')|tojson }}, token={{ csrf_token|tojson }}, page={{ page|tojson }};
+var lastAnalysis='', novelId='', timer=null, historyPage=1, more=false;
+function el(id){return document.getElementById(id);}
+function message(text,bad){el('mf-message').textContent=text||'';el('mf-message').className=bad?'mf-error':'';}
+async function post(command,a,b){
+ var body=new URLSearchParams({command:command,csrf_token:token});
+ if(a!==undefined)body.set('arg1',String(a));if(b!==undefined)body.set('arg2',String(b));
+ var response=await fetch(endpoint,{method:'POST',credentials:'same-origin',body:body});
+ if(!response.ok)throw new Error('서버 응답 '+response.status+' — 페이지를 새로고침해 보세요.');
+ var result=await response.json();if(result.ret!=='success')throw new Error(result.msg||'처리 실패');return result;
+}
+function action(id,fn){if(el(id))el(id).addEventListener('click',async function(){this.disabled=true;try{await fn();}catch(e){message(e.message,true);}finally{this.disabled=id==='prev'?historyPage<=1:id==='next'?!more:false;}});}
+function cell(row,text){var td=document.createElement('td');td.textContent=text==null?'':String(text);row.appendChild(td);return td;}
+function renderAnalysis(a){
+ if(!el('episodes'))return;novelId=a.novel_id;el('book_title').textContent=a.title;el('episodes').replaceChildren();
+ a.episodes.forEach(function(ep){var row=document.createElement('tr'),box=document.createElement('input');box.type='checkbox';box.value=ep.id;box.className='mf-episode';box.disabled=!ep.free||ep.have;box.checked=!box.disabled;cell(row,'').appendChild(box);cell(row,ep.no);cell(row,ep.title);cell(row,ep.have?'받음':ep.free?'무료':'유료/제한');el('episodes').appendChild(row);});
+ el('select_all').checked=true;el('download').disabled=false;
+}
+async function poll(){
+ try{var data=await post('status'),s=data.state,busy=s.status==='running';
+ el('state').textContent=s.message||s.status;el('counts').textContent='완료 '+(s.completed||0)+' · 건너뜀 '+(s.skipped||0)+' · 실패 '+(s.failed||0)+' | 현재 작품 '+(s.done||0)+' / '+(s.total||0);
+ el('bar').style.width=(s.total?Math.min(100,100*(s.done||0)/s.total):0)+'%';el('stop').disabled=!busy||s.cancel_requested;
+ el('schedule').textContent='자동 수집: '+(s.scheduler_enabled?'사용 중':'꺼짐');
+ if(el('download'))el('download').disabled=busy||!novelId;
+ if(s.analysis&&s.started!==lastAnalysis){lastAnalysis=s.started;renderAnalysis(s.analysis);}
+ }catch(e){message(e.message,true);}finally{timer=setTimeout(poll,2000);}
+}
+action('save',async function(){var c={};['titles','download_path','max_per_title','request_delay','basic_interval'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});var d=await post('save',JSON.stringify(c));message(d.msg);});
+action('run',async function(){message((await post('run')).msg);});
+action('analyze',async function(){message((await post('analyze',el('novel_url').value)).msg);novelId='';el('download').disabled=true;});
+action('download',async function(){var ids=Array.from(document.querySelectorAll('.mf-episode:checked:not(:disabled)')).map(function(x){return x.value;});if(!ids.length)throw new Error('회차를 선택하세요.');message((await post('download',novelId,JSON.stringify(ids))).msg);});
+action('stop',async function(){message((await post('stop')).msg);});
+if(el('select_all'))el('select_all').addEventListener('change',function(){var v=this.checked;document.querySelectorAll('.mf-episode:not(:disabled)').forEach(function(x){x.checked=v;});});
+async function history(){var d=await post('history',historyPage);more=d.more;el('history').replaceChildren();d.rows.forEach(function(r){var row=document.createElement('tr');cell(row,r.title+' / '+r.episode_title);cell(row,r.status==='completed'?'완료':'실패');cell(row,r.status==='completed'?r.path:r.error);cell(row,new Date(r.updated).toLocaleString());el('history').appendChild(row);});el('page_no').textContent=historyPage+' 페이지';el('prev').disabled=historyPage<=1;el('next').disabled=!more;}
+action('refresh',history);action('prev',async function(){historyPage=Math.max(1,historyPage-1);await history();});action('next',async function(){if(more){historyPage++;await history();}});
+if(page==='history')history().catch(function(e){message(e.message,true);});else poll();
+window.addEventListener('beforeunload',function(){clearTimeout(timer);});
+})();
+</script>
+{% endblock %}
