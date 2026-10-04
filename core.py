@@ -1,4 +1,4 @@
-"""Public mobile API client and storage engine. Python 3.8+, standard library only."""
+"""Mobile free-episode client and storage engine. Python 3.8+, standard library only."""
 import copy
 from contextlib import contextmanager
 import hashlib
@@ -26,6 +26,37 @@ class MunpiaError(Exception):
 
 class Stopped(MunpiaError):
     pass
+
+
+class LoginRequired(MunpiaError):
+    pass
+
+
+def normalize_cookie(value):
+    if not isinstance(value, str) or len(value) > 16384 or re.search(r'[^\x20-\x7e]', value):
+        raise MunpiaError('쿠키는 Cookie 요청 헤더의 값을 줄바꿈 없이 입력하세요. 최대 16KB입니다.')
+    value = value.strip()
+    if value.lower().startswith('cookie:'):
+        value = value[7:].strip()
+    if value:
+        for part in value.split(';'):
+            if not part.strip():
+                continue
+            name, sep, _ = part.strip().partition('=')
+            if not sep or not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name):
+                raise MunpiaError('쿠키 형식은 이름=값; 이름=값 입니다. Cookie 요청 헤더 값을 복사하세요.')
+        if not any(part.strip() for part in value.split(';')):
+            raise MunpiaError('쿠키 이름과 값이 없습니다.')
+    return value
+
+
+def response_error(payload, http_status=None):
+    code = payload.get('code') if isinstance(payload, dict) else None
+    code = code if isinstance(code, str) and re.fullmatch(r'[A-Z][0-9]{3}_[0-9]{5}', code) else '?'
+    if code in ('A001_11004', 'A002_21006'):
+        return LoginRequired('문피아 로그인이 필요하거나 쿠키가 만료되었습니다. 설정에서 쿠키를 저장하고 로그인 확인 후 다시 실행하세요. (' + code + ')')
+    suffix = ' HTTP %s' % http_status if http_status is not None else ''
+    return MunpiaError('문피아 접근 제한/응답 오류:%s 코드 %s' % (suffix, code))
 
 
 def now():
@@ -115,20 +146,23 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 class Client:
     BASE = 'https://m.munpia.com'
 
-    def __init__(self, stop=None, delay=1.5, transport=None):
+    def __init__(self, stop=None, delay=1.5, transport=None, cookie=''):
         self.stop = stop or threading.Event()
         self.delay = max(1.0, float(delay))
         self.transport = transport
         self.last_request = 0
-        # No CookieJar, account cookie, login, payment, or mobile-app impersonation.
+        self.cookie = normalize_cookie(cookie)
+        # Cookies only go to the fixed mobile HTTPS origin. Never follow redirects.
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def check(self):
         if self.stop.is_set():
             raise Stopped('중지했습니다.')
 
-    def get(self, path, params=None):
+    def _request(self, path, params=None):
         self.check()
+        if not re.fullmatch(r'/api/(?:member/my-info-simple|v1/mobile/novel-detail/[1-9][0-9]*(?:/chapters|/entries/[1-9][0-9]*)?)', path):
+            raise MunpiaError('허용되지 않은 문피아 요청 경로입니다.')
         if self.transport:
             payload = self.transport(path, params or {})
         else:
@@ -140,10 +174,13 @@ class Client:
                 if self.stop.wait(remaining):
                     raise Stopped('중지했습니다.')
                 self.last_request = time.monotonic()
-                req = urllib.request.Request(url, headers={
-                    'User-Agent': 'Mozilla/5.0 (compatible; MunpiaFreeFF/0.1)',
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (compatible; MunpiaFreeFF/0.2)',
                     'Accept': 'application/json', 'Referer': self.BASE + '/',
-                })
+                }
+                if self.cookie:
+                    headers['Cookie'] = self.cookie
+                req = urllib.request.Request(url, headers=headers)
                 try:
                     with self.opener.open(req, timeout=20) as response:
                         raw = response.read(8 * 1024 * 1024 + 1)
@@ -152,6 +189,15 @@ class Client:
                     payload = json.loads(raw.decode('utf-8'))
                     break
                 except urllib.error.HTTPError as exc:
+                    try:
+                        error_payload = json.loads(exc.read(8192).decode('utf-8'))
+                    except (ValueError, OSError):
+                        error_payload = {}
+                    finally:
+                        exc.close()
+                    error = response_error(error_payload, exc.code)
+                    if isinstance(error, LoginRequired):
+                        raise error from None
                     if exc.code in (429, 500, 502, 503, 504) and attempt < 2:
                         try:
                             retry = float(exc.headers.get('Retry-After', '5'))
@@ -160,7 +206,7 @@ class Client:
                         if self.stop.wait(min(60, max(5, retry)) * (attempt + 1)):
                             raise Stopped('중지했습니다.')
                         continue
-                    raise MunpiaError('문피아 HTTP 오류: %s (로그인/앱 제한은 건너뜁니다)' % exc.code)
+                    raise error from None
                 except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
                     if attempt < 2:
                         if self.stop.wait(3 * (attempt + 1)):
@@ -168,9 +214,18 @@ class Client:
                         continue
                     raise MunpiaError('문피아 연결 또는 응답 오류: %s' % type(exc).__name__)
         self.check()
+        return payload
+
+    def login_status(self):
+        payload = self._request('/api/member/my-info-simple')
+        if not isinstance(payload, dict) or type(payload.get('login')) is not bool:
+            raise response_error(payload)
+        return payload['login']
+
+    def get(self, path, params=None):
+        payload = self._request(path, params)
         if not isinstance(payload, dict) or payload.get('code') != 'M000_00000':
-            code = payload.get('code', '?') if isinstance(payload, dict) else '?'
-            raise MunpiaError('문피아 접근 제한/응답 오류: ' + str(code))
+            raise response_error(payload)
         if not isinstance(payload.get('result'), dict):
             raise MunpiaError('문피아 응답에 result가 없습니다.')
         return payload['result']
@@ -373,12 +428,13 @@ class Engine:
 
     def _run(self, kind, ids, config, selected, handle):
         completed = failed = skipped = 0
+        login_required = False
         try:
             root = Path(config['download_path']).expanduser()
             if not root.is_absolute():
                 raise MunpiaError('다운로드 경로는 컨테이너 안의 절대 경로여야 합니다.')
             root = root.resolve()
-            client = self.client_factory(stop=self.stop, delay=config['request_delay'])
+            client = self.client_factory(stop=self.stop, delay=config['request_delay'], cookie=config.get('cookie', ''))
             for nid in ids:
                 client.check()
                 self.update(message='작품 %s 목록을 확인합니다.' % nid)
@@ -429,16 +485,29 @@ class Engine:
                         completed += 1
                     except Stopped:
                         raise
+                    except LoginRequired as exc:
+                        failed += 1
+                        login_required = True
+                        self.history.record(nid, item, novel['title'], 'failed', error=str(exc))
+                        self.update(last_error=str(exc))
                     except Exception as exc:
                         failed += 1
                         self.history.record(nid, item, novel['title'], 'failed', error=str(exc))
+                        self.update(last_error=str(exc))
                     self.update(done=index + 1, completed=completed, failed=failed, skipped=skipped)
+                    if login_required:
+                        break
                 if config['make_epub']:
                     client.check()
                     self.update(message='EPUB 합본을 만듭니다.')
                     rows = [r for r in self.history.rows(nid=nid) if valid_record(r, root)]
                     build_epub(folder, novel, rows, self.stop)
-            self.update(status='completed', message='완료' if not failed else '완료 (실패 회차는 이력에서 확인하세요)', finished=now())
+                if login_required:
+                    break
+            if login_required:
+                self.update(status='auth_required', message='로그인이 필요해 중단했습니다. 쿠키 저장·로그인 확인 후 다시 실행하세요. 완료된 회차는 유지됩니다.', finished=now())
+            else:
+                self.update(status='completed', message='완료' if not failed else '완료 (실패 회차는 이력에서 확인하세요)', finished=now())
         except Stopped:
             self.update(status='canceled', message='중지했습니다. 완료된 파일은 보존됩니다.', finished=now())
         except Exception as exc:

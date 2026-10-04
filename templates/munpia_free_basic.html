@@ -4,17 +4,24 @@
 .mf{max-width:1100px;margin:18px auto;padding:0 12px}.mf-card{border:1px solid #aaa5;border-radius:8px;padding:18px;margin-bottom:18px}.mf label{display:block;margin:12px 0 5px}.mf input[type=text],.mf input[type=number],.mf textarea{width:100%;padding:8px;border:1px solid #9998;border-radius:4px}.mf small{display:block;opacity:.75;margin:5px 0}.mf-actions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.mf table{width:100%;border-collapse:collapse}.mf th,.mf td{padding:8px;border-bottom:1px solid #aaa4;text-align:left;word-break:break-word}.mf-note{padding:10px;border-left:3px solid #4a9b70;margin:12px 0}.mf-scroll{overflow:auto}.mf-progress{height:12px;background:#aaa4;border-radius:6px;overflow:hidden}.mf-progress div{height:100%;background:#499d79;width:0}.mf-error{color:#db5959}.mf-check{display:flex!important;gap:8px;align-items:center}.mf-check input{width:auto!important}
 </style>
 <style>
-.mf-path{display:flex;gap:8px;align-items:stretch}.mf-path input[type=text]{flex:1;min-width:0;width:auto}.mf-path button{flex:none;white-space:nowrap}
+.mf-path{display:flex;gap:8px;align-items:stretch}.mf-path input[type=text]{flex:1;min-width:0;width:auto}.mf-path button{flex:none;white-space:nowrap}.mf input[type=password]{width:100%;padding:8px;border:1px solid #9998;border-radius:4px}
 @media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
 </style>
 <div class="mf">
-<h3>문피아 무료회차 <small style="font-size:13px;display:inline">v0.1.1</small></h3>
+<h3>문피아 무료회차 <small style="font-size:13px;display:inline">v0.2.0</small></h3>
 <div class="mf-actions">
 <a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/setting">설정</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/manual">회차 선택</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/status">진행 상황</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/history">다운로드 이력</a>
 </div>
 <p id="mf-message" role="status"></p>
 {% if page == 'setting' %}
 <div class="mf-card">
+<label for="munpia_cookie">문피아 로그인 쿠키 (선택)</label>
+<input id="munpia_cookie" type="password" autocomplete="new-password" spellcheck="false" placeholder="Cookie 요청 헤더 값: 이름=값; 이름=값">
+<small id="cookie_saved">{% if cookie_saved %}저장된 쿠키 있음 · 빈칸으로 저장하면 기존 쿠키를 유지합니다.{% else %}저장된 쿠키 없음 · 일부 무료 작품은 6화부터 로그인이 필요합니다.{% endif %}</small>
+<label class="mf-check"><input id="clear_cookie" type="checkbox"> 저장 시 기존 쿠키 삭제</label>
+<div class="mf-actions"><button id="check_login" type="button" class="btn btn-outline-primary">로그인 확인</button></div>
+<p id="login_result" role="status"></p>
+<details><summary>쿠키 가져오는 방법 (PC 브라우저)</summary><ol><li>브라우저에서 m.munpia.com에 로그인하고 작품 페이지를 여세요.</li><li>F12 → Network(네트워크)를 열고 페이지를 새로고침하세요.</li><li>m.munpia.com으로 보내는 요청을 선택하고 Headers → Request Headers의 Cookie 값을 복사하세요. Set-Cookie가 아닙니다.</li><li>위 칸에 붙여넣고 로그인 확인 → 설정 저장을 누르세요.</li></ol><small>쿠키는 계정 인증정보입니다. 채팅이나 GitHub에 올리지 말고 FF 설정에만 입력하세요. 저장된 값은 화면에 다시 표시하지 않습니다.</small></details>
 <label for="titles">자동 수집할 작품</label><textarea id="titles" rows="5" placeholder="작품 주소 또는 번호를 한 줄에 하나씩">{{ config.titles }}</textarea><small>예: https://m.munpia.com/novel/detail/599040 · PC 주소도 사용할 수 있습니다.</small>
 <label for="download_path">다운로드 경로</label>
 <div class="mf-path"><input id="download_path" type="text" value="{{ config.download_path }}"><button id="select_download_path" type="button" class="btn btn-outline-primary">경로 선택</button></div>
@@ -27,7 +34,7 @@
 <label for="basic_interval">자동 수집 간격 (분)</label><input id="basic_interval" type="number" min="10" max="10080" value="{{ config.basic_interval }}">
 <label class="mf-check"><input id="basic_auto_start" type="checkbox" {% if config.basic_auto_start %}checked{% endif %}> 자동 수집 사용 (FF 재시작 후에도 유지)</label>
 <div class="mf-actions"><button id="save" class="btn btn-primary">설정 저장</button><button id="run" class="btn btn-success">저장된 목록 지금 받기</button></div>
-<div class="mf-note">공개 무료 회차 전용입니다. TXT는 항상 저장되며, EPUB은 받은 회차만 합칩니다. 이 버전은 표지·삽화를 내려받지 않고 삽화 위치에 표시만 남깁니다.</div>
+<div class="mf-note">무료 회차 전용입니다. 로그인 쿠키를 등록해도 유료 회차 구매나 결제는 하지 않습니다. TXT는 항상 저장되며, EPUB은 받은 회차만 합칩니다. 표지·삽화는 내려받지 않고 삽화 위치에 표시만 남깁니다.</div>
 </div>
 {% elif page == 'manual' %}
 <div class="mf-card"><label for="novel_url">작품 주소 또는 번호</label><input id="novel_url" type="text" placeholder="https://m.munpia.com/novel/detail/599040"><div class="mf-actions"><button id="analyze" class="btn btn-primary">회차 분석</button><button id="download" class="btn btn-success" disabled>선택 회차 받기</button></div><h5 id="book_title"></h5><label class="mf-check"><input id="select_all" type="checkbox"> 받을 수 있는 회차 전체 선택</label><div class="mf-scroll"><table><thead><tr><th>선택</th><th>번호</th><th>회차</th><th>상태</th></tr></thead><tbody id="episodes"></tbody></table></div></div>
@@ -35,7 +42,7 @@
 <div class="mf-card"><div class="mf-actions"><button id="refresh" class="btn btn-secondary">새로고침</button><button id="prev" class="btn btn-outline-secondary">이전</button><span id="page_no"></span><button id="next" class="btn btn-outline-secondary">다음</button></div><div class="mf-scroll"><table><thead><tr><th>작품 / 회차</th><th>결과</th><th>경로 또는 오류</th><th>시각</th></tr></thead><tbody id="history"></tbody></table></div></div>
 {% endif %}
 {% if page != 'history' %}
-<div class="mf-card"><h5>작업 상태</h5><p id="state">확인 중</p><p id="counts"></p><div class="mf-progress"><div id="bar"></div></div><small id="schedule"></small><div class="mf-actions"><button id="stop" class="btn btn-outline-danger" disabled>중지</button></div><small>중지 시 완료된 파일은 보존됩니다. 이미 받은 파일이 없거나 손상됐다면 다음 실행에서 다시 받습니다.</small></div>
+<div class="mf-card"><h5>작업 상태</h5><p id="state">확인 중</p><p id="counts"></p><p id="last_error" class="mf-error"></p><div class="mf-progress"><div id="bar"></div></div><small id="schedule"></small><div class="mf-actions"><button id="stop" class="btn btn-outline-danger" disabled>중지</button></div><small>중지 시 완료된 파일은 보존됩니다. 이미 받은 파일이 없거나 손상됐다면 다음 실행에서 다시 받습니다.</small></div>
 {% endif %}
 </div>
 <script>
@@ -64,6 +71,7 @@ async function poll(){
  el('state').textContent=s.message||s.status;el('counts').textContent='완료 '+(s.completed||0)+' · 건너뜀 '+(s.skipped||0)+' · 실패 '+(s.failed||0)+' | 현재 작품 '+(s.done||0)+' / '+(s.total||0);
  el('bar').style.width=(s.total?Math.min(100,100*(s.done||0)/s.total):0)+'%';el('stop').disabled=!busy||s.cancel_requested;
  el('schedule').textContent='자동 수집: '+(s.scheduler_enabled?'사용 중':'꺼짐');
+ el('last_error').textContent=s.last_error||'';
  if(el('download'))el('download').disabled=busy||!novelId;
  if(s.analysis&&s.started!==lastAnalysis){lastAnalysis=s.started;renderAnalysis(s.analysis);}
  }catch(e){message(e.message,true);}finally{timer=setTimeout(poll,2000);}
@@ -76,7 +84,13 @@ action('select_download_path',async function(){
   el('download_path').value=path.trim();message('폴더를 선택했습니다. 설정 저장을 눌러 적용하세요.');
  });
 });
-action('save',async function(){var c={};['titles','download_path','max_per_title','request_delay','basic_interval'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});var d=await post('save',JSON.stringify(c));message(d.msg);});
+action('check_login',async function(){
+ if(el('clear_cookie').checked)throw new Error('쿠키 삭제 선택을 해제한 뒤 로그인 확인을 누르세요.');
+ el('login_result').textContent='문피아 로그인 확인 중…';
+ try{var d=await post('check_login',el('munpia_cookie').value);el('login_result').textContent=d.msg;el('login_result').className=d.authenticated?'':'mf-error';}
+ catch(e){el('login_result').textContent=e.message;el('login_result').className='mf-error';throw e;}
+});
+action('save',async function(){var c={};['titles','download_path','max_per_title','request_delay','basic_interval'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});c.cookie=el('munpia_cookie').value;c.clear_cookie=el('clear_cookie').checked;var d=await post('save',JSON.stringify(c));el('munpia_cookie').value='';el('clear_cookie').checked=false;el('cookie_saved').textContent=d.cookie_saved?'저장된 쿠키 있음 · 빈칸으로 저장하면 기존 쿠키를 유지합니다.':'저장된 쿠키 없음';el('login_result').textContent='';message(d.msg);});
 action('run',async function(){message((await post('run')).msg);});
 action('analyze',async function(){message((await post('analyze',el('novel_url').value)).msg);novelId='';el('download').disabled=true;});
 action('download',async function(){var ids=Array.from(document.querySelectorAll('.mf-episode:checked:not(:disabled)')).map(function(x){return x.value;});if(!ids.length)throw new Error('회차를 선택하세요.');message((await post('download',novelId,JSON.stringify(ids))).msg);});

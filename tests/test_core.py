@@ -1,9 +1,11 @@
 import importlib.util
+import io
 import json
 from pathlib import Path
 import tempfile
 import threading
 import unittest
+import urllib.error
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -153,6 +155,56 @@ class Tests(unittest.TestCase):
         s = self.run_engine(engine, kind='analyze')
         self.assertEqual(len(s['analysis']['episodes']), 3)
         self.assertEqual(sum(e['have'] for e in s['analysis']['episodes']), 2)
+
+    def test_cookie_transport_login_and_error_redaction(self):
+        secret = 'session=synthetic-secret; another=value'
+        self.assertEqual(c.normalize_cookie('Cookie: ' + secret), secret)
+        for bad in ['session=secret\r\nX-Test: injected', 'Set-Cookie: session=secret', '한글=값', '; ;']:
+            with self.assertRaises(c.MunpiaError) as ctx:
+                c.normalize_cookie(bad)
+            self.assertNotIn(bad, str(ctx.exception))
+        requests = []
+        class Opener:
+            def open(self, req, timeout):
+                requests.append(req)
+                return io.BytesIO(b'{"login":true}')
+        client = c.Client(cookie=secret)
+        client.opener = Opener()
+        self.assertTrue(client.login_status())
+        self.assertEqual(requests[0].get_header('Cookie'), secret)
+        self.assertEqual(requests[0].full_url, 'https://m.munpia.com/api/member/my-info-simple')
+        with self.assertRaises(c.MunpiaError):
+            client.get('//example.com/steal')
+        self.assertEqual(len(requests), 1)
+        self.assertIsNone(c.NoRedirect().redirect_request(requests[0],None,302,'',{},'https://example.com/'))
+        self.assertFalse(c.Client(transport=lambda p,q: {'login':False}).login_status())
+        class ErrorOpener:
+            def open(self, req, timeout):
+                data = json.dumps({'code':'A002_21006','message':secret}).encode()
+                raise urllib.error.HTTPError(req.full_url,400,'Bad Request',{},io.BytesIO(data))
+        client = c.Client(cookie=secret)
+        client.opener = ErrorOpener()
+        with self.assertRaises(c.LoginRequired) as ctx:
+            client.entry('1','30')
+        self.assertIn('A002_21006', str(ctx.exception))
+        self.assertNotIn(secret, str(ctx.exception))
+
+    def test_login_required_stops_remaining_preserves_epub_and_resumes(self):
+        self.items.append({'id':40,'novelId':1,'num':11,'title':'11화','free':True})
+        def limited(path,params):
+            if path.endswith('/entries/30'):
+                self.calls.append((path,params))
+                return {'code':'A002_21006','message':'로그인 후 이용해주세요.'}
+            return self.transport(path,params)
+        engine = self.engine(limited)
+        state = self.run_engine(engine)
+        self.assertEqual((state['status'],state['completed'],state['failed']), ('auth_required',1,1))
+        self.assertFalse(any(p.endswith('/40') for p,q in self.calls))
+        self.assertTrue(list((self.root/'books').rglob('*.epub')))
+        self.calls.clear()
+        state = self.run_engine(self.engine())
+        self.assertEqual(state['completed'],2)
+        self.assertFalse(any(p.endswith('/10') or p.endswith('/20') for p,q in self.calls))
 
 
 if __name__ == '__main__':

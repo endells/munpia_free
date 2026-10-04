@@ -6,6 +6,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 
 try:
     from flask import Flask, request
@@ -96,6 +97,39 @@ class AdapterTests(unittest.TestCase):
         conf=self.module.config();conf['basic_auto_start']=False
         self.send('save',arg1=json.dumps(conf))
         self.assertNotIn('munpia_free_basic',self.jobs)
+
+    def test_cookie_storage_redaction_preservation_clear_and_verification(self):
+        import json
+        secret = 'session=synthetic-private-value'
+        conf = self.module.config()
+        conf['cookie'] = secret
+        try:
+            response = self.send('save',arg1=json.dumps(conf))
+            self.assertTrue(response.json['cookie_saved'])
+            self.assertNotIn(secret,response.get_data(as_text=True))
+            self.assertEqual(self.module.read_cookie(),secret)
+            self.assertEqual(self.module.cookie_path().stat().st_mode & 0o777,0o600)
+            self.assertNotIn('cookie', self.values)
+            self.assertNotIn('cookie',self.module.config())
+            html=self.client.get('/munpia_free/basic/setting').get_data(as_text=True)
+            self.assertNotIn(secret,html)
+            self.assertNotIn(secret,self.send('status').get_data(as_text=True))
+            conf['cookie']=''
+            self.send('save',arg1=json.dumps(conf))
+            self.assertEqual(self.module.read_cookie(),secret)
+            with patch('munpia_free.mod_basic.Client') as client:
+                client.return_value.login_status.return_value=True
+                self.assertTrue(self.send('check_login').json['authenticated'])
+                client.assert_called_once_with(cookie=secret)
+                client.return_value.login_status.return_value=False
+                self.assertFalse(self.send('check_login',arg1='session=new-candidate').json['authenticated'])
+                self.assertEqual(self.module.read_cookie(),secret)
+            self.assertEqual(self.client.post('/munpia_free/ajax/basic/command',data={'command':'check_login'}).status_code,403)
+            conf['clear_cookie']=True
+            self.assertFalse(self.send('save',arg1=json.dumps(conf)).json['cookie_saved'])
+            self.assertEqual(self.module.read_cookie(),'')
+        finally:
+            if self.module.cookie_path().exists(): self.module.cookie_path().unlink()
 
 
 if __name__ == '__main__': unittest.main()

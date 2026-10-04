@@ -7,7 +7,7 @@ from flask import jsonify, render_template, session
 from framework import F
 from plugin import PluginModuleBase
 
-from .core import Engine, MunpiaError, parse_id, title_ids
+from .core import Client, Engine, MunpiaError, atomic_write, normalize_cookie, parse_id, title_ids
 
 
 class ModuleBasic(PluginModuleBase):
@@ -38,6 +38,20 @@ class ModuleBasic(PluginModuleBase):
             raw['download_path'] = os.path.join(F.config['path_data'], 'downloads', 'munpia_free')
         return self.validate(raw)
 
+    def cookie_path(self):
+        return Path(F.config['path_data']) / 'db' / 'munpia_free_cookie.txt'
+
+    def read_cookie(self):
+        try:
+            return normalize_cookie(self.cookie_path().read_text(encoding='utf-8'))
+        except FileNotFoundError:
+            return ''
+
+    def runtime_config(self):
+        conf = self.config()
+        conf['cookie'] = self.read_cookie()
+        return conf
+
     @staticmethod
     def validate(raw):
         ids = title_ids(raw.get('titles', ''))
@@ -67,7 +81,7 @@ class ModuleBasic(PluginModuleBase):
             session[token_key] = secrets.token_urlsafe(32)
         return render_template('munpia_free_basic.html', page=page,
                                package_name=self.P.package_name, config=self.config(),
-                               csrf_token=session[token_key])
+                               csrf_token=session[token_key], cookie_saved=self.cookie_path().is_file())
 
     def process_command(self, command, arg1, arg2, arg3, req):
         try:
@@ -75,6 +89,13 @@ class ModuleBasic(PluginModuleBase):
             given = req.form.get('csrf_token', '')
             if not expected or not secrets.compare_digest(expected, given):
                 return jsonify(ret='error', msg='페이지를 새로고침한 후 다시 시도하세요.'), 403
+            if command == 'check_login':
+                cookie = normalize_cookie(arg1 or '') or self.read_cookie()
+                if not cookie:
+                    raise MunpiaError('로그인한 문피아의 쿠키를 먼저 입력하세요.')
+                logged_in = Client(cookie=cookie).login_status()
+                return jsonify(ret='success', authenticated=logged_in,
+                               msg='문피아 로그인 확인 완료. 새 쿠키를 입력했다면 설정 저장을 눌러 적용하세요.' if logged_in else '로그인되지 않았습니다. 문피아에 다시 로그인한 뒤 모바일 웹 요청의 Cookie 값을 복사하세요.')
             if command == 'browse_path':
                 path = Path(os.path.normpath(str(arg1 or '/').strip() or '/'))
                 if not path.is_absolute():
@@ -96,7 +117,17 @@ class ModuleBasic(PluginModuleBase):
                 rows = engine.history.rows(51, (page - 1) * 50)
                 return jsonify(ret='success', rows=rows[:50], more=len(rows) > 50, page=page)
             if command == 'save':
-                conf = self.validate(json.loads(arg1 or '{}'))
+                raw = json.loads(arg1 or '{}')
+                conf = self.validate(raw)
+                cookie = normalize_cookie(raw.get('cookie', ''))
+                if raw.get('clear_cookie') is True:
+                    try:
+                        self.cookie_path().unlink()
+                    except FileNotFoundError:
+                        pass
+                elif cookie:
+                    # Separate from FF's generic settings responses; atomic_write uses mode 0600.
+                    atomic_write(self.cookie_path(), cookie.encode('utf-8'))
                 for key, value in conf.items():
                     self.P.ModelSetting.set(key, str(value))
                 # Apply scheduler settings immediately, as well as on next FF start.
@@ -104,18 +135,18 @@ class ModuleBasic(PluginModuleBase):
                     self.P.logic.scheduler_stop(self.name)
                 if conf['basic_auto_start']:
                     self.P.logic.scheduler_start(self.name)
-                return jsonify(ret='success', msg='설정을 저장했습니다.')
+                return jsonify(ret='success', msg='설정을 저장했습니다.', cookie_saved=self.cookie_path().is_file())
             if command == 'analyze':
                 nid = parse_id(arg1)
-                engine.start('analyze', [nid], self.config())
+                engine.start('analyze', [nid], self.runtime_config())
             elif command == 'download':
                 nid = parse_id(arg1)
                 selected = json.loads(arg2 or '[]')
                 if not isinstance(selected, list) or not selected or len(selected) > 10000 or any(not str(x).isdigit() for x in selected):
                     raise MunpiaError('다운로드할 회차를 선택하세요.')
-                engine.start('download', [nid], self.config(), selected=selected)
+                engine.start('download', [nid], self.runtime_config(), selected=selected)
             elif command == 'run':
-                conf = self.config()
+                conf = self.runtime_config()
                 engine.start('download', title_ids(conf['titles']), conf)
             elif command == 'stop':
                 engine.cancel()
@@ -131,7 +162,7 @@ class ModuleBasic(PluginModuleBase):
 
     def scheduler_function(self):
         try:
-            conf = self.config()
+            conf = self.runtime_config()
             self._engine().start('download', title_ids(conf['titles']), conf)
         except Exception as exc:
             self.P.logger.warning('문피아 무료 수집 시작 실패: %s', exc)
