@@ -15,7 +15,7 @@
 @media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
 </style>
 <div class="mf">
-<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.3.2</small></h3>
+<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.3.3</small></h3>
 <section class="mf-status" aria-label="작업 상태">
 <div class="mf-status-head"><strong class="mf-status-heading">작업 상태</strong><span id="state" class="mf-status-state" role="status">확인 중</span><button id="stop" type="button" class="btn btn-sm btn-outline-danger mf-stop" title="중지해도 완료된 파일은 보존됩니다." disabled>중지</button></div>
 <div class="mf-status-meta"><span id="counts"></span><span id="schedule" class="mf-status-schedule"></span></div>
@@ -38,6 +38,7 @@
 <div class="mf-path"><input id="download_path" type="text" value="{{ config.download_path }}"><button id="select_download_path" type="button" class="btn btn-outline-primary">경로 선택</button></div>
 <small>경로 선택으로 폴더를 찾은 뒤 아래의 설정 저장을 누르세요. 직접 입력도 가능합니다.</small>
 <small>FF 도커에 연결된 폴더만 보입니다. 시놀로지 NAS 폴더가 목록에 없으면 Container Manager 또는 Portainer의 FF 볼륨 연결을 확인하세요.</small>
+<label for="episode_digits">파일명 회차 번호 자릿수</label><input id="episode_digits" type="number" min="1" max="10" step="1" value="{{ config.episode_digits }}"><small>기본 5자리 · 3자리: 034_제목.txt · 4자리: 0034_제목.txt. 새로 받는 파일부터 적용되며 기존 파일명은 유지합니다. 회차 번호가 설정한 자릿수보다 길면 전체 번호를 사용합니다.</small>
 <label for="max_per_title">작품당 한 번에 받을 최대 회차 수</label><input id="max_per_title" type="number" min="1" max="1000" value="{{ config.max_per_title }}"><small>이미 받은 회차는 제외합니다. 수동 선택에도 적용되며 초과분은 다음 실행에서 받습니다.</small>
 <label for="request_delay">요청 사이 간격 (초)</label><input id="request_delay" type="number" min="1" max="60" step="0.5" value="{{ config.request_delay }}">
 <label class="mf-check"><input id="make_epub" type="checkbox" {% if config.make_epub %}checked{% endif %}> 받은 회차를 EPUB 합본으로 만들기</label>
@@ -102,7 +103,7 @@ action('check_login',async function(){
  try{var d=await post('check_login',el('munpia_cookie').value);el('login_result').textContent=d.msg;el('login_result').className=d.authenticated?'':'mf-error';}
  catch(e){el('login_result').textContent=e.message;el('login_result').className='mf-error';throw e;}
 });
-action('save',async function(){var c={};['titles','download_path','max_per_title','request_delay','basic_interval','epub_line_height','epub_paragraph_gap'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});c.cookie=el('munpia_cookie').value;c.clear_cookie=el('clear_cookie').checked;var d=await post('save',JSON.stringify(c));el('munpia_cookie').value='';el('clear_cookie').checked=false;el('cookie_saved').textContent=d.cookie_saved?'저장된 쿠키 있음 · 빈칸으로 저장하면 기존 쿠키를 유지합니다.':'저장된 쿠키 없음';el('login_result').textContent='';message(d.msg);});
+action('save',async function(){var c={};['titles','download_path','episode_digits','max_per_title','request_delay','basic_interval','epub_line_height','epub_paragraph_gap'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});c.cookie=el('munpia_cookie').value;c.clear_cookie=el('clear_cookie').checked;var d=await post('save',JSON.stringify(c));el('munpia_cookie').value='';el('clear_cookie').checked=false;el('cookie_saved').textContent=d.cookie_saved?'저장된 쿠키 있음 · 빈칸으로 저장하면 기존 쿠키를 유지합니다.':'저장된 쿠키 없음';el('login_result').textContent='';message(d.msg);});
 action('run',async function(){message((await post('run')).msg);});
 action('refresh_saved',async function(){message((await post('refresh')).msg);});
 action('refresh_one',async function(){var value=el('novel_url').value.trim();if(!value)throw new Error('작품 주소를 입력하세요.');message((await post('refresh',value)).msg);});

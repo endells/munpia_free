@@ -12,7 +12,7 @@ from .core import Client, Engine, MunpiaError, atomic_write, normalize_cookie, p
 
 class ModuleBasic(PluginModuleBase):
     db_default = {
-        'titles': '', 'download_path': '', 'max_per_title': '10',
+        'titles': '', 'download_path': '', 'max_per_title': '10', 'episode_digits': '5',
         'request_delay': '1.5', 'make_epub': 'True',
         'include_author_comment': 'False',
         'epub_line_height': '1.8', 'epub_paragraph_gap': '0.55',
@@ -77,6 +77,9 @@ class ModuleBasic(PluginModuleBase):
         path = str(raw.get('download_path', '')).strip()
         if not Path(path).is_absolute():
             raise MunpiaError('다운로드 경로는 컨테이너 안의 절대 경로를 입력하세요.')
+        digits = int(raw.get('episode_digits', 5))
+        if not 1 <= digits <= 10:
+            raise MunpiaError('파일명 회차 번호 자릿수는 1~10 범위입니다.')
         maximum = int(raw.get('max_per_title', 10))
         delay = float(raw.get('request_delay', 1.5))
         interval = int(raw.get('basic_interval', 180))
@@ -91,7 +94,7 @@ class ModuleBasic(PluginModuleBase):
         if not 1.2 <= line_height <= 2.5 or not 0 <= paragraph_gap <= 1.5:
             raise MunpiaError('EPUB 줄간격은 1.2~2.5, 문단 간격은 0~1.5 범위입니다.')
         flag = lambda k: raw.get(k) in (True, 'true', 'True', '1')
-        return {'titles': '\n'.join(ids), 'download_path': path, 'max_per_title': maximum,
+        return {'titles': '\n'.join(ids), 'download_path': path, 'max_per_title': maximum, 'episode_digits': digits,
                 'request_delay': delay, 'basic_interval': interval,
                 'epub_line_height': line_height, 'epub_paragraph_gap': paragraph_gap,
                 'make_epub': flag('make_epub'), 'include_author_comment': flag('include_author_comment'),

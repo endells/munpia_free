@@ -98,7 +98,7 @@ class AdapterTests(unittest.TestCase):
         for page in ['setting','manual','status','history']:
             r = self.client.get('/munpia_free/basic/'+page)
             self.assertEqual(r.status_code, 200)
-            self.assertIn('문피아 무료회차', r.get_data(as_text=True))
+            self.assertIn('문피아 무료편 다운', r.get_data(as_text=True))
 
     def test_csrf_and_status_history(self):
         self.assertEqual(self.client.post('/munpia_free/ajax/basic/command',data={'command':'run'}).status_code,403)
