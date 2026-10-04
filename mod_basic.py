@@ -143,6 +143,17 @@ class ModuleBasic(PluginModuleBase):
                 page = max(1, min(100000, int(arg1 or 1)))
                 rows = engine.history.rows(51, (page - 1) * 50)
                 return jsonify(ret='success', rows=rows[:50], more=len(rows) > 50, page=page)
+            if command == 'add_auto':
+                nid = parse_id(arg1)
+                current = self.P.ModelSetting.get('titles') or ''
+                if nid in title_ids(current):
+                    return jsonify(ret='success', added=False, novel_id=nid,
+                                   msg='이미 자동 수집 목록에 등록된 작품입니다. (' + nid + ')')
+                updated = current.rstrip() + '\n' + nid if current.strip() else nid
+                self.P.ModelSetting.set('titles', updated)
+                # Only append the title: do not start work, enable or reset a schedule.
+                return jsonify(ret='success', added=True, novel_id=nid,
+                               msg='자동 수집 목록에 저장했습니다. (' + nid + ') 즉시 다운로드하지 않으며 자동 수집 사용 여부와 예약은 기존 설정을 따릅니다.')
             if command == 'save':
                 raw = json.loads(arg1 or '{}')
                 conf = self.validate(raw)

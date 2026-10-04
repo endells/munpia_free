@@ -15,7 +15,7 @@
 @media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
 </style>
 <div class="mf">
-<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.3.3</small></h3>
+<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.3.4</small></h3>
 <section class="mf-status" aria-label="작업 상태">
 <div class="mf-status-head"><strong class="mf-status-heading">작업 상태</strong><span id="state" class="mf-status-state" role="status">확인 중</span><button id="stop" type="button" class="btn btn-sm btn-outline-danger mf-stop" title="중지해도 완료된 파일은 보존됩니다." disabled>중지</button></div>
 <div class="mf-status-meta"><span id="counts"></span><span id="schedule" class="mf-status-schedule"></span></div>
@@ -52,7 +52,7 @@
 <div class="mf-note">무료 회차 전용입니다. 유료 회차 구매나 결제는 하지 않습니다. TXT 맨 위에 회차 번호·제목을 넣고, 표지·info.xml·본문 삽화를 함께 저장합니다. EPUB에는 표지와 삽화를 포함합니다.</div>
 </div>
 {% elif page == 'manual' %}
-<div class="mf-card"><label for="novel_url">작품 주소 또는 번호</label><input id="novel_url" type="text" placeholder="https://m.munpia.com/novel/detail/599040"><div class="mf-actions"><button id="analyze" class="btn btn-primary">회차 분석</button><button id="download" class="btn btn-success" disabled>선택 회차 받기</button><button id="refresh_one" class="btn btn-outline-primary">이 작품 기존 파일 보완</button></div><h5 id="book_title"></h5><label class="mf-check"><input id="select_all" type="checkbox"> 받을 수 있는 회차 전체 선택</label><div class="mf-scroll"><table><thead><tr><th>선택</th><th>번호</th><th>회차</th><th>상태</th></tr></thead><tbody id="episodes"></tbody></table></div></div>
+<div class="mf-card"><label for="novel_url">작품 주소 또는 번호</label><input id="novel_url" type="text" placeholder="https://m.munpia.com/novel/detail/599040"><div class="mf-actions"><button id="analyze" class="btn btn-primary">회차 분석</button><button id="download" class="btn btn-success" disabled>선택 회차 받기</button><button id="add_auto" type="button" class="btn btn-outline-primary" title="분석한 작품을 설정 목록에 저장합니다. 즉시 다운로드하지 않습니다." disabled>자동 수집 목록에 추가</button><button id="refresh_one" class="btn btn-outline-primary">이 작품 기존 파일 보완</button></div><h5 id="book_title"></h5><label class="mf-check"><input id="select_all" type="checkbox"> 받을 수 있는 회차 전체 선택</label><div class="mf-scroll"><table><thead><tr><th>선택</th><th>번호</th><th>회차</th><th>상태</th></tr></thead><tbody id="episodes"></tbody></table></div></div>
 {% elif page == 'history' %}
 <div class="mf-card"><div class="mf-actions"><button id="refresh" class="btn btn-secondary">새로고침</button><button id="prev" class="btn btn-outline-secondary">이전</button><span id="page_no"></span><button id="next" class="btn btn-outline-secondary">다음</button></div><div class="mf-scroll"><table><thead><tr><th>작품 / 회차</th><th>결과</th><th>경로 또는 오류</th><th>시각</th></tr></thead><tbody id="history"></tbody></table></div></div>
 {% endif %}
@@ -72,12 +72,12 @@ async function post(command,a,b){
  if(!response.ok)throw new Error('서버 응답 '+response.status+' — 페이지를 새로고침해 보세요.');
  var result=await response.json();if(result.ret!=='success')throw new Error(result.msg||'처리 실패');return result;
 }
-function action(id,fn){if(el(id))el(id).addEventListener('click',async function(){this.disabled=true;try{await fn();}catch(e){message(e.message,true);}finally{this.disabled=id==='prev'?historyPage<=1:id==='next'?!more:false;}});}
+function action(id,fn){if(el(id))el(id).addEventListener('click',async function(){this.disabled=true;try{await fn();}catch(e){message(e.message,true);}finally{this.disabled=id==='prev'?historyPage<=1:id==='next'?!more:id==='add_auto'?!novelId:false;}});}
 function cell(row,text){var td=document.createElement('td');td.textContent=text==null?'':String(text);row.appendChild(td);return td;}
 function renderAnalysis(a){
  if(!el('episodes'))return;novelId=a.novel_id;el('book_title').textContent=a.title;el('episodes').replaceChildren();
  a.episodes.forEach(function(ep){var row=document.createElement('tr'),box=document.createElement('input');box.type='checkbox';box.value=ep.id;box.className='mf-episode';box.disabled=!ep.free||ep.have;box.checked=!box.disabled;cell(row,'').appendChild(box);cell(row,ep.no);cell(row,ep.title);cell(row,ep.have?'받음':ep.free?'무료':'유료/제한');el('episodes').appendChild(row);});
- el('select_all').checked=true;el('download').disabled=false;
+ el('select_all').checked=true;el('download').disabled=false;el('add_auto').disabled=false;
 }
 async function poll(){
  try{var data=await post('status'),s=data.state,busy=s.status==='running';
@@ -107,7 +107,8 @@ action('save',async function(){var c={};['titles','download_path','episode_digit
 action('run',async function(){message((await post('run')).msg);});
 action('refresh_saved',async function(){message((await post('refresh')).msg);});
 action('refresh_one',async function(){var value=el('novel_url').value.trim();if(!value)throw new Error('작품 주소를 입력하세요.');message((await post('refresh',value)).msg);});
-action('analyze',async function(){message((await post('analyze',el('novel_url').value)).msg);novelId='';el('download').disabled=true;});
+action('analyze',async function(){message((await post('analyze',el('novel_url').value)).msg);novelId='';el('download').disabled=true;el('add_auto').disabled=true;});
+action('add_auto',async function(){if(!novelId)throw new Error('먼저 작품을 분석하세요.');message((await post('add_auto',novelId)).msg);});
 action('download',async function(){var ids=Array.from(document.querySelectorAll('.mf-episode:checked:not(:disabled)')).map(function(x){return x.value;});if(!ids.length)throw new Error('회차를 선택하세요.');message((await post('download',novelId,JSON.stringify(ids))).msg);});
 action('stop',async function(){message((await post('stop')).msg);});
 if(el('select_all'))el('select_all').addEventListener('change',function(){var v=this.checked;document.querySelectorAll('.mf-episode:not(:disabled)').forEach(function(x){x.checked=v;});});

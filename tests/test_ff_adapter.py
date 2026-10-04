@@ -94,6 +94,26 @@ class AdapterTests(unittest.TestCase):
     def send(self, command, **kw):
         return self.client.post('/munpia_free/ajax/basic/command',data={'command':command,'csrf_token':self.token,**kw})
 
+    def test_add_auto_preserves_settings_and_does_not_start_work(self):
+        previous = dict(self.values)
+        try:
+            self.values['titles'] = 'https://m.munpia.com/novel/detail/599040'
+            self.values['basic_auto_start'] = 'False'
+            with patch.object(self.module._engine(), 'start') as start, patch.object(self.module, 'sync_schedule') as schedule:
+                first = self.send('add_auto', arg1='594760').get_json()
+                self.assertTrue(first['added'])
+                self.assertEqual(self.values['titles'], 'https://m.munpia.com/novel/detail/599040\n594760')
+                duplicate = self.send('add_auto', arg1='https://www.munpia.com/novel/detail/594760').get_json()
+                self.assertFalse(duplicate['added'])
+                existing = self.send('add_auto', arg1='599040').get_json()
+                self.assertFalse(existing['added'])
+                self.assertEqual(self.values['basic_auto_start'], 'False')
+                start.assert_not_called()
+                schedule.assert_not_called()
+        finally:
+            self.values.clear()
+            self.values.update(previous)
+
     def test_four_templates_render(self):
         for page in ['setting','manual','status','history']:
             r = self.client.get('/munpia_free/basic/'+page)
