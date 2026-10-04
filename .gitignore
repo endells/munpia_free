@@ -6,6 +6,7 @@ __pycache__/
 *.log
 *.epub
 downloads/
+.munpia_free/
 cookies*
 munpia_free_cookie.txt
 .env*

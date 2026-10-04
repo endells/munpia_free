@@ -148,5 +148,19 @@ class AdapterTests(unittest.TestCase):
         finally:
             if self.module.cookie_path().exists(): self.module.cookie_path().unlink()
 
+    def test_epub_settings_and_existing_book_refresh_command(self):
+        import json
+        conf=self.module.config()
+        conf.update(epub_line_height=2.0,epub_paragraph_gap=0.7)
+        self.assertEqual(self.send('save',arg1=json.dumps(conf)).json['ret'],'success')
+        self.assertEqual(self.module.config()['epub_line_height'],2.0)
+        with patch.object(self.module._engine(),'start') as start:
+            self.assertEqual(self.send('refresh',arg1='https://m.munpia.com/novel/detail/599040').json['ret'],'success')
+            args=start.call_args[0]
+            self.assertEqual(args[:2],('refresh',['599040']))
+            self.assertEqual(args[2]['epub_paragraph_gap'],0.7)
+        conf['epub_line_height']=100
+        self.assertEqual(self.send('save',arg1=json.dumps(conf)).json['ret'],'error')
+
 
 if __name__ == '__main__': unittest.main()

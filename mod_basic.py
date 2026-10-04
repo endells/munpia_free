@@ -15,6 +15,7 @@ class ModuleBasic(PluginModuleBase):
         'titles': '', 'download_path': '', 'max_per_title': '10',
         'request_delay': '1.5', 'make_epub': 'True',
         'include_author_comment': 'False',
+        'epub_line_height': '1.8', 'epub_paragraph_gap': '0.55',
         'basic_interval': '180', 'basic_auto_start': 'False',
     }
 
@@ -61,15 +62,20 @@ class ModuleBasic(PluginModuleBase):
         maximum = int(raw.get('max_per_title', 10))
         delay = float(raw.get('request_delay', 1.5))
         interval = int(raw.get('basic_interval', 180))
+        line_height = float(raw.get('epub_line_height', 1.8))
+        paragraph_gap = float(raw.get('epub_paragraph_gap', 0.55))
         if not 1 <= maximum <= 1000:
             raise MunpiaError('작품당 회차 수는 1~1000 범위입니다.')
         if not 1 <= delay <= 60:
             raise MunpiaError('요청 간격은 1~60초 범위입니다.')
         if not 10 <= interval <= 10080:
             raise MunpiaError('자동 수집 간격은 10~10080분 범위입니다.')
+        if not 1.2 <= line_height <= 2.5 or not 0 <= paragraph_gap <= 1.5:
+            raise MunpiaError('EPUB 줄간격은 1.2~2.5, 문단 간격은 0~1.5 범위입니다.')
         flag = lambda k: raw.get(k) in (True, 'true', 'True', '1')
         return {'titles': '\n'.join(ids), 'download_path': path, 'max_per_title': maximum,
                 'request_delay': delay, 'basic_interval': interval,
+                'epub_line_height': line_height, 'epub_paragraph_gap': paragraph_gap,
                 'make_epub': flag('make_epub'), 'include_author_comment': flag('include_author_comment'),
                 'basic_auto_start': flag('basic_auto_start')}
 
@@ -148,6 +154,10 @@ class ModuleBasic(PluginModuleBase):
             elif command == 'run':
                 conf = self.runtime_config()
                 engine.start('download', title_ids(conf['titles']), conf)
+            elif command == 'refresh':
+                conf = self.runtime_config()
+                ids = [parse_id(arg1)] if arg1 else title_ids(conf['titles'])
+                engine.start('refresh', ids, conf)
             elif command == 'stop':
                 engine.cancel()
                 return jsonify(ret='success', msg='중지 요청을 보냈습니다. 진행 중 요청의 응답을 기다릴 수 있습니다.')

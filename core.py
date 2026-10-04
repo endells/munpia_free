@@ -1,4 +1,4 @@
-"""Mobile free-episode client and storage engine. Python 3.8+, standard library only."""
+"""Mobile free-episode client and storage engine. Python 3.8+; media uses Pillow."""
 import copy
 from contextlib import contextmanager
 import hashlib
@@ -16,9 +16,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import zipfile
 from datetime import datetime, timezone
-from xml.sax.saxutils import escape
+
+from . import publication
 
 
 class MunpiaError(Exception):
@@ -304,7 +304,36 @@ class Client:
         n = d.get('novelInfo') or {}
         if str(n.get('id')) != str(nid) or not n.get('title'):
             raise MunpiaError('작품 정보가 일치하지 않습니다.')
+        intro = d.get('introductionInfo') or {}
+        n['introduction'] = plain_text(intro.get('introduction') or '')
+        n['tags'] = [x.get('title', '') for x in intro.get('tags', []) if isinstance(x, dict)]
         return n
+
+    def image(self, url):
+        """Download site-supplied image URLs without sharing account cookies with a CDN."""
+        url = urllib.parse.urljoin(self.BASE + '/', str(url))
+        u = urllib.parse.urlsplit(url)
+        if (u.scheme != 'https' or not u.hostname or
+                not (u.hostname == 'munpia.com' or u.hostname.endswith('.munpia.com')) or
+                u.username or u.password or u.port not in (None, 443)):
+            raise ValueError('문피아 HTTPS 이미지 주소만 지원합니다.')
+        self.check()
+        if self.stop.wait(max(0, self.last_request + self.delay - time.monotonic())):
+            raise Stopped('중지했습니다.')
+        self.last_request = time.monotonic()
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0',
+                                     'Accept': 'image/jpeg,image/png,image/gif,image/webp', 'Referer': self.BASE + '/'})
+        try:
+            with self.opener.open(req, timeout=20) as response:
+                data = response.read(20 * 1024 * 1024 + 1)
+        except (urllib.error.URLError, OSError) as exc:
+            if isinstance(exc, urllib.error.HTTPError):
+                exc.close()
+            raise ValueError('문피아 이미지 요청에 실패했습니다. 기존 파일 보완으로 재시도할 수 있습니다.') from None
+        self.check()
+        if len(data) > 20 * 1024 * 1024:
+            raise ValueError('이미지 크기가 20MB를 초과했습니다.')
+        return data
 
     def chapters(self, nid):
         path = '/api/v1/mobile/novel-detail/%s/chapters' % parse_id(nid)
@@ -343,7 +372,7 @@ class Client:
         if str(e.get('id')) != str(eid):
             raise MunpiaError('회차 응답이 일치하지 않습니다.')
         text = plain_text(e.get('content'))
-        if not text or len(text.replace('[삽화]', '').strip()) == 0:
+        if (not text or len(text.replace('[삽화]', '').strip()) == 0) and not any(b['type'] == 'image' for b in publication.body_blocks(e)):
             raise MunpiaError('본문이 비어 있어 완료로 기록하지 않았습니다.')
         return e, text
 
@@ -402,6 +431,12 @@ class History:
             return False
         return valid_record(dict(row), root)
 
+    def update_digest(self, row, new_digest):
+        with self.connect() as db:
+            db.execute('UPDATE entries SET sha256=?, updated=? WHERE novel_id=? AND entry_id=? AND sha256=?',
+                       (new_digest, now(), row['novel_id'], row['entry_id'], row['sha256']))
+        row['sha256'] = new_digest
+
 
 def valid_record(row, root):
     try:
@@ -412,39 +447,13 @@ def valid_record(row, root):
         return False
 
 
-def build_epub(folder, novel, records, stop=None):
-    """EPUB 2, stable book UID, explicit episode order, escaped XML, atomic replace."""
-    if not records:
-        return None
-    folder = Path(folder)
-    title, author = str(novel['title']), str(novel.get('authorName') or '')
-    uid = 'urn:munpia:novel:' + str(novel['id'])
-    out = folder / ('%s [%s].epub' % (safe_name(title), novel['id']))
-    fd, temp = tempfile.mkstemp(prefix='.epub-', dir=str(folder))
-    os.close(fd)
-    try:
-        with zipfile.ZipFile(temp, 'w', zipfile.ZIP_DEFLATED) as z:
-            z.writestr('mimetype', 'application/epub+zip', compress_type=zipfile.ZIP_STORED)
-            z.writestr('META-INF/container.xml', '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')
-            manifest, spine, toc = [], [], []
-            for i, rec in enumerate(sorted(records, key=lambda r: (r['seq'], r['entry_id']))):
-                if stop and stop.is_set():
-                    raise Stopped('EPUB 생성을 중지했습니다.')
-                cid = 'ch%d' % i
-                label = escape(rec['episode_title'])
-                body = Path(rec['path']).read_text(encoding='utf-8')
-                paragraphs = ''.join('<p>%s</p>' % (escape(line) or '&#160;') for line in body.splitlines())
-                z.writestr('OEBPS/' + cid + '.xhtml', '<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>%s</title></head><body><h2>%s</h2>%s</body></html>' % (label, label, paragraphs))
-                manifest.append('<item id="%s" href="%s.xhtml" media-type="application/xhtml+xml"/>' % (cid, cid))
-                spine.append('<itemref idref="%s"/>' % cid)
-                toc.append('<navPoint id="%s" playOrder="%d"><navLabel><text>%s</text></navLabel><content src="%s.xhtml"/></navPoint>' % (cid, i + 1, label, cid))
-            z.writestr('OEBPS/content.opf', '<?xml version="1.0" encoding="utf-8"?><package version="2.0" unique-identifier="BookId" xmlns="http://www.idpf.org/2007/opf"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>%s</dc:title><dc:creator>%s</dc:creator><dc:language>ko</dc:language><dc:identifier id="BookId">%s</dc:identifier></metadata><manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>%s</manifest><spine toc="ncx">%s</spine></package>' % (escape(title), escape(author), uid, ''.join(manifest), ''.join(spine)))
-            z.writestr('OEBPS/toc.ncx', '<?xml version="1.0" encoding="utf-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="%s"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="0"/><meta name="dtb:maxPageNumber" content="0"/></head><docTitle><text>%s</text></docTitle><navMap>%s</navMap></ncx>' % (uid, escape(title), ''.join(toc)))
-        os.replace(temp, str(out))
-    finally:
-        if os.path.exists(temp):
-            os.unlink(temp)
-    return str(out)
+def build_epub(folder, novel, records, stop=None, warn=None, line_height=1.8, paragraph_gap=0.55):
+    def check():
+        if stop and stop.is_set():
+            raise Stopped('EPUB 생성을 중지했습니다.')
+    output_name = '%s [%s].epub' % (safe_name(novel['title']), novel['id'])
+    return publication.build_epub(folder, novel, records, output_name, check, warn or (lambda message: None),
+                                  line_height, paragraph_gap)
 
 
 class Engine:
@@ -469,8 +478,46 @@ class Engine:
         self.stop.set()
         self.update(cancel_requested=True)
 
+    def warn(self, message):
+        with self.guard:
+            self.state['warnings'] = self.state.get('warnings', 0) + 1
+            self.state['last_warning'] = message
+
+    def prepare_book(self, folder, novel, client):
+        publication.write_info(folder, novel, atomic_write)
+        atomic_write(publication.safe_path(folder, 'metadata.json'), json.dumps(novel, ensure_ascii=False, indent=2).encode('utf-8'))
+        cover = publication.safe_path(folder, 'cover.jpg')
+        if cover.is_file() and cover.stat().st_size:
+            return
+        url = novel.get('coverUrl') or novel.get('originCoverUrl')
+        if url:
+            try:
+                data, _ = publication.decode_image(client.image(url), cover=True)
+                atomic_write(cover, data)
+            except (ValueError, OSError) as exc:
+                self.warn('표지 저장 실패: ' + str(exc))
+
+    def upgrade_headings(self, records, client):
+        for row in records:
+            client.check()
+            path = Path(row['path'])
+            raw = path.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != row['sha256']:
+                raise MunpiaError('기존 TXT가 변경되었습니다. 다시 실행하세요.')
+            title = publication.heading(row['seq'], row['episode_title'])
+            text = raw.decode('utf-8')
+            if text.startswith(title + '\n'):
+                continue
+            cache = publication.load_cache(path.parent, row)
+            data = (title + '\n\n' + text).encode('utf-8')
+            atomic_write(path, data)
+            self.history.update_digest(row, hashlib.sha256(data).hexdigest())
+            if cache:
+                cache.update(txt_sha256=row['sha256'], title=title)
+                atomic_write(publication.cache_path(path.parent, row['entry_id']), json.dumps(cache, ensure_ascii=False).encode('utf-8'))
+
     def start(self, kind, ids, config, selected=None):
-        if kind not in ('analyze', 'download'):
+        if kind not in ('analyze', 'download', 'refresh'):
             raise MunpiaError('지원하지 않는 작업입니다.')
         if not ids:
             raise MunpiaError('작품을 등록하거나 URL을 입력하세요.')
@@ -486,7 +533,7 @@ class Engine:
                 raise MunpiaError('다른 FF 프로세스에서 작업 중입니다.')
             self.stop.clear()
             self.state = {'status': 'running', 'kind': kind, 'message': '시작 중', 'completed': 0,
-                          'failed': 0, 'skipped': 0, 'done': 0, 'total': 0, 'started': now(), 'cancel_requested': False}
+                          'failed': 0, 'skipped': 0, 'warnings': 0, 'done': 0, 'total': 0, 'started': now(), 'cancel_requested': False}
         self.thread = threading.Thread(target=self._run, args=(kind, ids, dict(config), selected, handle), daemon=True)
         try:
             self.thread.start()
@@ -518,6 +565,9 @@ class Engine:
                 wanted = set(map(str, selected)) if selected is not None else None
                 if wanted is not None and not wanted.issubset({str(c['id']) for c in chapters}):
                     raise MunpiaError('선택 회차가 현재 목록에 없습니다. 다시 분석하세요.')
+                records = [r for r in self.history.rows(nid=nid) if valid_record(r, root)]
+                self.upgrade_headings(records, client)
+                completed_rows = {r['entry_id']: r for r in records}
                 candidates = []
                 for item in chapters:
                     if wanted is not None and str(item['id']) not in wanted:
@@ -525,7 +575,10 @@ class Engine:
                     if item.get('free') is not True:
                         skipped += 1
                         continue
-                    if self.history.complete(nid, item['id'], root):
+                    existing = completed_rows.get(str(item['id']))
+                    if kind == 'refresh' and not existing:
+                        continue
+                    if existing and (kind != 'refresh' or publication.media_complete(Path(existing['path']).parent, existing)):
                         skipped += 1
                         continue
                     candidates.append(item)
@@ -536,17 +589,22 @@ class Engine:
                 # Only plugin-created names are used; guard against symlink escapes too.
                 folder.resolve().relative_to(root)
                 folder.mkdir(parents=True, exist_ok=True)
-                atomic_write(folder / 'metadata.json', json.dumps({k: novel.get(k) for k in ('id', 'title', 'authorName', 'genres', 'coverUrl')}, ensure_ascii=False, indent=2).encode('utf-8'))
+                self.prepare_book(folder, novel, client)
                 for index, item in enumerate(candidates):
                     client.check()
                     self.update(message='받는 중: ' + item.get('title', ''), current_episode=item.get('title', ''))
+                    existing = completed_rows.get(str(item['id']))
                     try:
-                        entry, text = client.entry(nid, item['id'])
-                        if config['include_author_comment'] and entry.get('authorComment'):
-                            text += '\n\n[작가의 말]\n' + plain_text(entry['authorComment'])
-                        data = (text + '\n').encode('utf-8')
+                        target_folder = Path(existing['path']).parent if existing else folder
+                        previous = publication.load_cache(target_folder, existing) if existing else None
+                        if previous and previous.get('source'):
+                            entry = previous['source']
+                        else:
+                            entry, _ = client.entry(nid, item['id'])
+                        data = publication.save_episode(target_folder, item, entry, config['include_author_comment'],
+                                                        client.image, atomic_write, client.check, self.warn, previous)
                         filename = '%05d_%s [%s].txt' % (int(item.get('num') or 0), safe_name(item.get('title', '')), item['id'])
-                        path = folder / filename
+                        path = Path(existing['path']) if existing else folder / filename
                         path.resolve().relative_to(root)
                         client.check()
                         atomic_write(path, data)
@@ -557,11 +615,13 @@ class Engine:
                     except LoginRequired as exc:
                         failed += 1
                         login_required = True
-                        self.history.record(nid, item, novel['title'], 'failed', error=str(exc))
+                        if not existing:
+                            self.history.record(nid, item, novel['title'], 'failed', error=str(exc))
                         self.update(last_error=str(exc))
                     except Exception as exc:
                         failed += 1
-                        self.history.record(nid, item, novel['title'], 'failed', error=str(exc))
+                        if not existing:
+                            self.history.record(nid, item, novel['title'], 'failed', error=str(exc))
                         self.update(last_error=str(exc))
                     self.update(done=index + 1, completed=completed, failed=failed, skipped=skipped)
                     if login_required:
@@ -570,13 +630,14 @@ class Engine:
                     client.check()
                     self.update(message='EPUB 합본을 만듭니다.')
                     rows = [r for r in self.history.rows(nid=nid) if valid_record(r, root)]
-                    build_epub(folder, novel, rows, self.stop)
+                    build_epub(folder, novel, rows, self.stop, self.warn,
+                               config.get('epub_line_height', 1.8), config.get('epub_paragraph_gap', 0.55))
                 if login_required:
                     break
             if login_required:
                 self.update(status='auth_required', message='로그인이 필요해 중단했습니다. 쿠키 저장·로그인 확인 후 다시 실행하세요. 완료된 회차는 유지됩니다.', finished=now())
             else:
-                self.update(status='completed', message='완료' if not failed else '완료 (실패 회차는 이력에서 확인하세요)', finished=now())
+                self.update(status='completed', message='완료 (실패/이미지 경고를 확인하세요)' if failed or self.snapshot().get('warnings') else '완료', finished=now())
         except Stopped:
             self.update(status='canceled', message='중지했습니다. 완료된 파일은 보존됩니다.', finished=now())
         except Exception as exc:

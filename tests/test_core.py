@@ -10,9 +10,9 @@ import urllib.error
 import zipfile
 import xml.etree.ElementTree as ET
 
-spec = importlib.util.spec_from_file_location('mf_core', Path(__file__).parents[1] / 'core.py')
-c = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(c)
+import sys
+sys.path.insert(0, str(Path(__file__).parents[2]))
+from munpia_free import core as c
 
 
 def payload(result):
@@ -96,7 +96,7 @@ class Tests(unittest.TestCase):
                     ET.fromstring(z.read(name))
             toc = ET.fromstring(z.read('OEBPS/toc.ncx'))
             labels = [e.text for e in toc.findall('.//{*}navLabel/{*}text')]
-            self.assertEqual(labels, ['1화', '10화'])
+            self.assertEqual(labels, ['1. 1화', '10. 10화'])
             self.assertIn(b'urn:munpia:novel:1', z.read('OEBPS/content.opf'))
         self.calls.clear()
         self.assertEqual(self.run_engine(engine)['completed'], 0)
