@@ -27,8 +27,26 @@ class AdapterTests(unittest.TestCase):
         cls.app.secret_key = 'synthetic-test-only'
         cls.app.jinja_loader = ChoiceLoader([FileSystemLoader(str(root / 'templates')), DictLoader({'base.html': '{% block content %}{% endblock %}'})])
         cls.jobs = set()
+        cls.registered_jobs = {}
+        cls.registrations = []
+        def add_job_instance(job, run=True):
+            if job.job_id in cls.jobs:
+                return
+            cls.jobs.add(job.job_id)
+            cls.registered_jobs[job.job_id] = job
+            cls.registrations.append((job, run))
+            if run:
+                job.target_function()
+        def remove_job(job_id):
+            cls.jobs.discard(job_id)
+            cls.registered_jobs.pop(job_id, None)
+        class Job:
+            def __init__(self, package, job_id, interval, target_function, description):
+                self.job_id, self.interval, self.target_function = job_id, interval, target_function
         cls.framework = types.ModuleType('framework')
-        cls.framework.F = types.SimpleNamespace(config={'path_data': cls.tmp.name}, scheduler=types.SimpleNamespace(is_include=lambda n: n in cls.jobs))
+        cls.framework.F = types.SimpleNamespace(config={'path_data': cls.tmp.name}, scheduler=types.SimpleNamespace(
+            is_include=lambda n: n in cls.jobs, add_job_instance=add_job_instance, remove_job=remove_job))
+        cls.framework.Job = Job
         cls.old_framework = sys.modules.get('framework')
         cls.old_plugin = sys.modules.get('plugin')
         sys.modules['framework'] = cls.framework
@@ -38,6 +56,8 @@ class AdapterTests(unittest.TestCase):
                 self.P, self.name = P, name
             def get_scheduler_name(self):
                 return self.P.package_name + '_' + self.name
+            def get_scheduler_desc(self):
+                return '문피아 무료 회차 수집'
         plugin.PluginModuleBase = Base
         sys.modules['plugin'] = plugin
         from munpia_free.mod_basic import ModuleBasic
@@ -161,6 +181,55 @@ class AdapterTests(unittest.TestCase):
             self.assertEqual(args[2]['epub_paragraph_gap'],0.7)
         conf['epub_line_height']=100
         self.assertEqual(self.send('save',arg1=json.dumps(conf)).json['ret'],'error')
+
+    def test_save_does_not_run_or_reset_existing_schedule(self):
+        import json
+        scheduler = self.framework.F.scheduler
+        scheduler.remove_job('munpia_free_basic')
+        self.registrations.clear()
+        conf = self.module.config()
+        conf.update(titles='599040', basic_auto_start=True, basic_interval=180)
+        with patch.object(self.module._engine(), 'start') as start:
+            self.assertEqual(self.send('save',arg1=json.dumps(conf)).json['ret'],'success')
+            start.assert_not_called()
+            self.assertFalse(self.registrations[-1][1])
+            first = self.registered_jobs['munpia_free_basic']
+            conf['titles'] = '599040\n12345'
+            self.send('save',arg1=json.dumps(conf))
+            self.assertIs(self.registered_jobs['munpia_free_basic'],first)
+            self.assertEqual(len(self.registrations),1)
+            start.assert_not_called()
+            conf['basic_interval'] = 240
+            self.send('save',arg1=json.dumps(conf))
+            self.assertEqual(len(self.registrations),2)
+            self.assertFalse(self.registrations[-1][1])
+            start.assert_not_called()
+            self.registered_jobs['munpia_free_basic'].target_function()
+            self.assertEqual(start.call_args[0][1],['599040','12345'])
+            start.reset_mock()
+            self.send('run')
+            start.assert_called_once()
+            start.reset_mock()
+            conf['basic_auto_start'] = False
+            self.send('save',arg1=json.dumps(conf))
+            self.assertNotIn('munpia_free_basic',self.jobs)
+            start.assert_not_called()
+
+    def test_plugin_load_registers_without_immediate_download(self):
+        scheduler = self.framework.F.scheduler
+        scheduler.remove_job('munpia_free_basic')
+        self.values['basic_auto_start'] = 'True'
+        try:
+            with patch.object(self.module._engine(), 'start') as start:
+                self.module.plugin_load()
+                self.assertFalse(self.registrations[-1][1])
+                # FF's subsequent auto-start call sees the existing job and leaves it alone.
+                job = self.registered_jobs['munpia_free_basic']
+                scheduler.add_job_instance(job)
+                start.assert_not_called()
+        finally:
+            scheduler.remove_job('munpia_free_basic')
+            self.values['basic_auto_start'] = 'False'
 
 
 if __name__ == '__main__': unittest.main()

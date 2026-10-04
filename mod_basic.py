@@ -4,7 +4,7 @@ import secrets
 from pathlib import Path
 
 from flask import jsonify, render_template, session
-from framework import F
+from framework import F, Job
 from plugin import PluginModuleBase
 
 from .core import Client, Engine, MunpiaError, atomic_write, normalize_cookie, parse_id, title_ids
@@ -27,6 +27,24 @@ class ModuleBasic(PluginModuleBase):
         if not self.P.ModelSetting.get('download_path'):
             self.P.ModelSetting.set('download_path', os.path.join(F.config['path_data'], 'downloads', 'munpia_free'))
         self._engine()
+        self.sync_schedule(self.config())
+
+    def sync_schedule(self, conf, previous_interval=None):
+        job_id = self.get_scheduler_name()
+        included = F.scheduler.is_include(job_id)
+        if not conf['basic_auto_start']:
+            if included:
+                F.scheduler.remove_job(job_id)
+            return
+        if included and (previous_interval is None or previous_interval == conf['basic_interval']):
+            # Changing titles, paths or cookies must not reset the next scheduled run.
+            return
+        if included:
+            F.scheduler.remove_job(job_id)
+        job = Job(self.P.package_name, job_id, str(conf['basic_interval']),
+                  self.scheduler_function, self.get_scheduler_desc())
+        # FF defaults to an immediate first run (5-20 seconds). Explicitly opt out.
+        F.scheduler.add_job_instance(job, run=False)
 
     def _engine(self):
         if self.engine is None:
@@ -125,6 +143,7 @@ class ModuleBasic(PluginModuleBase):
             if command == 'save':
                 raw = json.loads(arg1 or '{}')
                 conf = self.validate(raw)
+                previous_interval = self.config()['basic_interval']
                 cookie = normalize_cookie(raw.get('cookie', ''))
                 if raw.get('clear_cookie') is True:
                     try:
@@ -136,11 +155,7 @@ class ModuleBasic(PluginModuleBase):
                     atomic_write(self.cookie_path(), cookie.encode('utf-8'))
                 for key, value in conf.items():
                     self.P.ModelSetting.set(key, str(value))
-                # Apply scheduler settings immediately, as well as on next FF start.
-                if F.scheduler.is_include(self.get_scheduler_name()):
-                    self.P.logic.scheduler_stop(self.name)
-                if conf['basic_auto_start']:
-                    self.P.logic.scheduler_start(self.name)
+                self.sync_schedule(conf, previous_interval)
                 return jsonify(ret='success', msg='설정을 저장했습니다.', cookie_saved=self.cookie_path().is_file())
             if command == 'analyze':
                 nid = parse_id(arg1)

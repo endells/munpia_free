@@ -8,7 +8,7 @@
 @media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
 </style>
 <div class="mf">
-<h3>문피아 무료회차 <small style="font-size:13px;display:inline">v0.3.0</small></h3>
+<h3>문피아 무료회차 <small style="font-size:13px;display:inline">v0.3.1</small></h3>
 <div class="mf-actions">
 <a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/setting">설정</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/manual">회차 선택</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/status">진행 상황</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/history">다운로드 이력</a>
 </div>
@@ -35,7 +35,7 @@
 <label for="epub_paragraph_gap">EPUB 문단 간격 (em)</label><input id="epub_paragraph_gap" type="number" min="0" max="1.5" step="0.05" value="{{ config.epub_paragraph_gap }}"><small>기본 줄간격 1.8, 문단 간격 0.55. 리더 앱의 사용자 설정이 우선할 수 있습니다. 변경 후 기존 파일 보완을 실행하면 EPUB을 다시 만듭니다.</small>
 <label class="mf-check"><input id="include_author_comment" type="checkbox" {% if config.include_author_comment %}checked{% endif %}> 작가의 말 포함</label>
 <label for="basic_interval">자동 수집 간격 (분)</label><input id="basic_interval" type="number" min="10" max="10080" value="{{ config.basic_interval }}">
-<label class="mf-check"><input id="basic_auto_start" type="checkbox" {% if config.basic_auto_start %}checked{% endif %}> 자동 수집 사용 (FF 재시작 후에도 유지)</label>
+<label class="mf-check"><input id="basic_auto_start" type="checkbox" {% if config.basic_auto_start %}checked{% endif %}> 자동 수집 사용 (FF 재시작 후에도 유지)</label><small>설정 저장만으로는 다운로드를 시작하지 않습니다. 자동 수집은 예약 시각에 실행하며, 바로 받으려면 저장된 목록 지금 받기를 누르세요.</small>
 <div class="mf-actions"><button id="save" class="btn btn-primary">설정 저장</button><button id="run" class="btn btn-success">저장된 목록 지금 받기</button><button id="refresh_saved" class="btn btn-outline-primary">저장된 목록 기존 파일 보완</button></div>
 <small>기존 파일 보완: 이미 받은 TXT의 제목·표지·info.xml을 보완하고, 누락된 삽화를 복원합니다. EPUB 사용 시 새 서식으로 합본을 다시 만듭니다. 회차 재조회에는 저장된 쿠키와 작품당 상한이 적용됩니다.</small>
 <div class="mf-note">무료 회차 전용입니다. 유료 회차 구매나 결제는 하지 않습니다. TXT 맨 위에 회차 번호·제목을 넣고, 표지·info.xml·본문 삽화를 함께 저장합니다. EPUB에는 표지와 삽화를 포함합니다.</div>
