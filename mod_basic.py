@@ -75,6 +75,17 @@ class ModuleBasic(PluginModuleBase):
             given = req.form.get('csrf_token', '')
             if not expected or not secrets.compare_digest(expected, given):
                 return jsonify(ret='error', msg='페이지를 새로고침한 후 다시 시도하세요.'), 403
+            if command == 'browse_path':
+                path = Path(os.path.normpath(str(arg1 or '/').strip() or '/'))
+                if not path.is_absolute():
+                    raise MunpiaError('폴더 선택은 /로 시작하는 컨테이너 내부 경로를 입력하세요.')
+                # FF's folder dialog requires an existing, readable directory.
+                # New download folders may not exist until the first download.
+                while not (path.is_dir() and os.access(str(path), os.R_OK | os.X_OK)):
+                    if path == path.parent:
+                        raise MunpiaError('열 수 있는 상위 폴더가 없습니다. FF 폴더 접근 권한을 확인하세요.')
+                    path = path.parent
+                return jsonify(ret='success', path=str(path))
             engine = self._engine()
             if command == 'status':
                 state = engine.snapshot()

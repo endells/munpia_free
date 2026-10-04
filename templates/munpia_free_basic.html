@@ -3,8 +3,12 @@
 <style>
 .mf{max-width:1100px;margin:18px auto;padding:0 12px}.mf-card{border:1px solid #aaa5;border-radius:8px;padding:18px;margin-bottom:18px}.mf label{display:block;margin:12px 0 5px}.mf input[type=text],.mf input[type=number],.mf textarea{width:100%;padding:8px;border:1px solid #9998;border-radius:4px}.mf small{display:block;opacity:.75;margin:5px 0}.mf-actions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.mf table{width:100%;border-collapse:collapse}.mf th,.mf td{padding:8px;border-bottom:1px solid #aaa4;text-align:left;word-break:break-word}.mf-note{padding:10px;border-left:3px solid #4a9b70;margin:12px 0}.mf-scroll{overflow:auto}.mf-progress{height:12px;background:#aaa4;border-radius:6px;overflow:hidden}.mf-progress div{height:100%;background:#499d79;width:0}.mf-error{color:#db5959}.mf-check{display:flex!important;gap:8px;align-items:center}.mf-check input{width:auto!important}
 </style>
+<style>
+.mf-path{display:flex;gap:8px;align-items:stretch}.mf-path input[type=text]{flex:1;min-width:0;width:auto}.mf-path button{flex:none;white-space:nowrap}
+@media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
+</style>
 <div class="mf">
-<h3>문피아 무료회차 <small style="font-size:13px;display:inline">v0.1.0</small></h3>
+<h3>문피아 무료회차 <small style="font-size:13px;display:inline">v0.1.1</small></h3>
 <div class="mf-actions">
 <a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/setting">설정</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/manual">회차 선택</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/status">진행 상황</a><a class="btn btn-sm btn-outline-secondary" href="/{{ package_name }}/basic/history">다운로드 이력</a>
 </div>
@@ -12,7 +16,10 @@
 {% if page == 'setting' %}
 <div class="mf-card">
 <label for="titles">자동 수집할 작품</label><textarea id="titles" rows="5" placeholder="작품 주소 또는 번호를 한 줄에 하나씩">{{ config.titles }}</textarea><small>예: https://m.munpia.com/novel/detail/599040 · PC 주소도 사용할 수 있습니다.</small>
-<label for="download_path">다운로드 폴더</label><input id="download_path" type="text" value="{{ config.download_path }}"><small>FF 컨테이너 내부 경로입니다. NAS에 연결된 볼륨의 쓰기 가능한 폴더를 지정하세요.</small>
+<label for="download_path">다운로드 경로</label>
+<div class="mf-path"><input id="download_path" type="text" value="{{ config.download_path }}"><button id="select_download_path" type="button" class="btn btn-outline-primary">경로 선택</button></div>
+<small>경로 선택으로 폴더를 찾은 뒤 아래의 설정 저장을 누르세요. 직접 입력도 가능합니다.</small>
+<small>FF 도커에 연결된 폴더만 보입니다. 시놀로지 NAS 폴더가 목록에 없으면 Container Manager 또는 Portainer의 FF 볼륨 연결을 확인하세요.</small>
 <label for="max_per_title">작품당 한 번에 받을 최대 회차 수</label><input id="max_per_title" type="number" min="1" max="1000" value="{{ config.max_per_title }}"><small>이미 받은 회차는 제외합니다. 수동 선택에도 적용되며 초과분은 다음 실행에서 받습니다.</small>
 <label for="request_delay">요청 사이 간격 (초)</label><input id="request_delay" type="number" min="1" max="60" step="0.5" value="{{ config.request_delay }}">
 <label class="mf-check"><input id="make_epub" type="checkbox" {% if config.make_epub %}checked{% endif %}> 받은 회차를 EPUB 합본으로 만들기</label>
@@ -61,6 +68,14 @@ async function poll(){
  if(s.analysis&&s.started!==lastAnalysis){lastAnalysis=s.started;renderAnalysis(s.analysis);}
  }catch(e){message(e.message,true);}finally{timer=setTimeout(poll,2000);}
 }
+action('select_download_path',async function(){
+ if(typeof window.globalSelectLocalFolder!=='function')throw new Error('이 FF 버전에서는 폴더 선택창을 사용할 수 없습니다. 경로를 직접 입력해 주세요.');
+ var d=await post('browse_path',el('download_path').value.trim()||'/');
+ window.globalSelectLocalFolder('다운로드 폴더',d.path,function(path){
+  if(typeof path!=='string'||!path.trim())return;
+  el('download_path').value=path.trim();message('폴더를 선택했습니다. 설정 저장을 눌러 적용하세요.');
+ });
+});
 action('save',async function(){var c={};['titles','download_path','max_per_title','request_delay','basic_interval'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});var d=await post('save',JSON.stringify(c));message(d.msg);});
 action('run',async function(){message((await post('run')).msg);});
 action('analyze',async function(){message((await post('analyze',el('novel_url').value)).msg);novelId='';el('download').disabled=true;});
