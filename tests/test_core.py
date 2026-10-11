@@ -148,6 +148,46 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.run_engine(self.engine())['status'], 'failed')
         self.assertEqual(list(outside.iterdir()), [])
 
+    def test_paid_list_pruning_preserves_files_and_manual_access(self):
+        engine = self.engine()
+        self.run_engine(engine, selected=['10'])
+        rows = engine.history.rows(nid='1')
+        before = {r['path']: Path(r['path']).read_bytes() for r in rows}
+        removed = []
+        self.conf['remove_paid_title'] = removed.append
+        self.calls.clear()
+        state = self.run_engine(engine)
+        self.assertEqual(removed, ['1'])
+        self.assertEqual(state['removed_titles'][0]['id'], '1')
+        self.assertFalse(any('/entries/' in p for p, q in self.calls))
+        for path, data in before.items():
+            self.assertEqual(Path(path).read_bytes(), data)
+        self.assertEqual(self.run_engine(engine, selected=['30'])['completed'], 1)
+        self.run_engine(engine, kind='analyze')
+        self.run_engine(engine, kind='refresh')
+        self.assertEqual(removed, ['1'])
+
+    def test_pruning_requires_explicit_paid_flag_and_successful_listing(self):
+        removed = []
+        self.conf['remove_paid_title'] = removed.append
+        for items in ([], [{'id': 10, 'free': None}], [{'id': 10, 'free': True}]):
+            self.items = items
+            self.run_engine(self.engine())
+            self.assertEqual(removed, [])
+        def broken(path, params):
+            if path.endswith('/chapters'):
+                return payload({'list': [{'id': 20, 'free': False}], 'total': 2, 'next': False})
+            return self.transport(path, params)
+        self.assertEqual(self.run_engine(self.engine(broken))['status'], 'failed')
+        self.assertEqual(removed, [])
+
+    def test_manual_selection_ignores_batch_limit(self):
+        self.conf['max_per_title'] = 1
+        state = self.run_engine(self.engine(), selected=['10', '20', '30'])
+        self.assertEqual(state['completed'], 2)
+        self.assertEqual(state['total'], 2)
+        self.assertFalse(any(p.endswith('/20') for p, q in self.calls))
+
     def test_limit_and_analysis(self):
         self.conf['max_per_title'] = 1
         engine = self.engine()

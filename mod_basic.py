@@ -1,6 +1,7 @@
 import json
 import os
 import secrets
+import threading
 from pathlib import Path
 
 from flask import jsonify, render_template, session
@@ -22,6 +23,7 @@ class ModuleBasic(PluginModuleBase):
     def __init__(self, P):
         super().__init__(P, first_menu='setting', name='basic', scheduler_desc='문피아 무료 회차 수집')
         self.engine = None
+        self.settings_lock = threading.RLock()
 
     def plugin_load(self):
         if not self.P.ModelSetting.get('download_path'):
@@ -69,7 +71,16 @@ class ModuleBasic(PluginModuleBase):
     def runtime_config(self):
         conf = self.config()
         conf['cookie'] = self.read_cookie()
+        conf['remove_paid_title'] = self.remove_paid_title
         return conf
+
+    def remove_paid_title(self, nid):
+        # Worker threads need their own Flask context for FF's settings database.
+        with F.app.app_context(), self.settings_lock:
+            current = title_ids(self.P.ModelSetting.get('titles') or '')
+            if str(nid) in current:
+                self.P.ModelSetting.set('titles', '\n'.join(x for x in current if x != str(nid)))
+                self.P.logger.info('유료 전환 작품 자동 목록 제거: %s (기존 파일 보존)', nid)
 
     @staticmethod
     def validate(raw):
@@ -145,12 +156,13 @@ class ModuleBasic(PluginModuleBase):
                 return jsonify(ret='success', rows=rows[:50], more=len(rows) > 50, page=page)
             if command == 'add_auto':
                 nid = parse_id(arg1)
-                current = self.P.ModelSetting.get('titles') or ''
-                if nid in title_ids(current):
-                    return jsonify(ret='success', added=False, novel_id=nid,
-                                   msg='이미 자동 수집 목록에 등록된 작품입니다. (' + nid + ')')
-                updated = current.rstrip() + '\n' + nid if current.strip() else nid
-                self.P.ModelSetting.set('titles', updated)
+                with self.settings_lock:
+                    current = self.P.ModelSetting.get('titles') or ''
+                    if nid in title_ids(current):
+                        return jsonify(ret='success', added=False, novel_id=nid,
+                                       msg='이미 자동 수집 목록에 등록된 작품입니다. (' + nid + ')')
+                    updated = current.rstrip() + '\n' + nid if current.strip() else nid
+                    self.P.ModelSetting.set('titles', updated)
                 # Only append the title: do not start work, enable or reset a schedule.
                 return jsonify(ret='success', added=True, novel_id=nid,
                                msg='자동 수집 목록에 저장했습니다. (' + nid + ') 즉시 다운로드하지 않으며 자동 수집 사용 여부와 예약은 기존 설정을 따릅니다.')
@@ -167,8 +179,9 @@ class ModuleBasic(PluginModuleBase):
                 elif cookie:
                     # Separate from FF's generic settings responses; atomic_write uses mode 0600.
                     atomic_write(self.cookie_path(), cookie.encode('utf-8'))
-                for key, value in conf.items():
-                    self.P.ModelSetting.set(key, str(value))
+                with self.settings_lock:
+                    for key, value in conf.items():
+                        self.P.ModelSetting.set(key, str(value))
                 self.sync_schedule(conf, previous_interval)
                 return jsonify(ret='success', msg='설정을 저장했습니다.', cookie_saved=self.cookie_path().is_file())
             if command == 'analyze':

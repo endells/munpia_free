@@ -556,6 +556,17 @@ class Engine:
                 self.update(message='작품 %s 목록을 확인합니다.' % nid)
                 novel = client.detail(nid)
                 chapters = client.chapters(nid)
+                # Only prune saved-list downloads after a complete, successful listing.
+                remove_paid = config.get('remove_paid_title')
+                if (kind == 'download' and selected is None and callable(remove_paid)
+                        and any(item.get('free') is False for item in chapters)):
+                    client.check()
+                    remove_paid(nid)
+                    removed = self.snapshot().get('removed_titles', [])
+                    removed.append({'id': str(nid), 'title': novel['title']})
+                    self.update(removed_titles=removed)
+                    self.warn('유료 전환 작품을 자동 수집 목록에서 제거했습니다: %s (%s). 기존 파일은 유지됩니다.' % (novel['title'], nid))
+                    continue
                 if kind == 'analyze':
                     episodes = [{'id': str(c['id']), 'no': c.get('num'), 'title': c.get('title', ''),
                                  'free': c.get('free') is True, 'have': self.history.complete(nid, c['id'], root)} for c in chapters]
@@ -582,8 +593,9 @@ class Engine:
                         skipped += 1
                         continue
                     candidates.append(item)
-                maximum = int(config['max_per_title'])
-                candidates = candidates[:maximum]
+                # Explicit manual selection is not capped by the automatic batch size.
+                if wanted is None:
+                    candidates = candidates[:int(config['max_per_title'])]
                 self.update(total=len(candidates), done=0, current_title=novel['title'], skipped=skipped)
                 folder = root / ('%s [%s]' % (safe_name(novel['title']), nid))
                 # Only plugin-created names are used; guard against symlink escapes too.

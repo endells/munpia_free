@@ -44,7 +44,7 @@ class AdapterTests(unittest.TestCase):
             def __init__(self, package, job_id, interval, target_function, description):
                 self.job_id, self.interval, self.target_function = job_id, interval, target_function
         cls.framework = types.ModuleType('framework')
-        cls.framework.F = types.SimpleNamespace(config={'path_data': cls.tmp.name}, scheduler=types.SimpleNamespace(
+        cls.framework.F = types.SimpleNamespace(app=cls.app, config={'path_data': cls.tmp.name}, scheduler=types.SimpleNamespace(
             is_include=lambda n: n in cls.jobs, add_job_instance=add_job_instance, remove_job=remove_job))
         cls.framework.Job = Job
         cls.old_framework = sys.modules.get('framework')
@@ -109,6 +109,20 @@ class AdapterTests(unittest.TestCase):
                 self.assertFalse(existing['added'])
                 self.assertEqual(self.values['basic_auto_start'], 'False')
                 start.assert_not_called()
+                schedule.assert_not_called()
+        finally:
+            self.values.clear()
+            self.values.update(previous)
+
+    def test_remove_paid_title_persists_only_target_without_schedule_change(self):
+        previous = dict(self.values)
+        try:
+            self.values['titles'] = 'https://m.munpia.com/novel/detail/599040\n594760\n123'
+            with patch.object(self.module, 'sync_schedule') as schedule:
+                self.module.runtime_config()['remove_paid_title']('594760')
+                self.assertEqual(self.values['titles'], '599040\n123')
+                self.module.remove_paid_title('594760')
+                self.assertEqual(self.values['titles'], '599040\n123')
                 schedule.assert_not_called()
         finally:
             self.values.clear()

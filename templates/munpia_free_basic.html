@@ -15,7 +15,7 @@
 @media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
 </style>
 <div class="mf">
-<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.3.4</small></h3>
+<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.3.5</small></h3>
 <section class="mf-status" aria-label="작업 상태">
 <div class="mf-status-head"><strong class="mf-status-heading">작업 상태</strong><span id="state" class="mf-status-state" role="status">확인 중</span><button id="stop" type="button" class="btn btn-sm btn-outline-danger mf-stop" title="중지해도 완료된 파일은 보존됩니다." disabled>중지</button></div>
 <div class="mf-status-meta"><span id="counts"></span><span id="schedule" class="mf-status-schedule"></span></div>
@@ -39,7 +39,8 @@
 <small>경로 선택으로 폴더를 찾은 뒤 아래의 설정 저장을 누르세요. 직접 입력도 가능합니다.</small>
 <small>FF 도커에 연결된 폴더만 보입니다. 시놀로지 NAS 폴더가 목록에 없으면 Container Manager 또는 Portainer의 FF 볼륨 연결을 확인하세요.</small>
 <label for="episode_digits">파일명 회차 번호 자릿수</label><input id="episode_digits" type="number" min="1" max="10" step="1" value="{{ config.episode_digits }}"><small>기본 5자리 · 3자리: 034_제목.txt · 4자리: 0034_제목.txt. 새로 받는 파일부터 적용되며 기존 파일명은 유지합니다. 회차 번호가 설정한 자릿수보다 길면 전체 번호를 사용합니다.</small>
-<label for="max_per_title">작품당 한 번에 받을 최대 회차 수</label><input id="max_per_title" type="number" min="1" max="1000" value="{{ config.max_per_title }}"><small>이미 받은 회차는 제외합니다. 수동 선택에도 적용되며 초과분은 다음 실행에서 받습니다.</small>
+<p><small>자동 수집 시 유료 회차가 확인된 작품은 목록에서 자동 제거합니다. 기존 TXT·EPUB은 유지합니다.</small></p>
+<label for="max_per_title">작품당 한 번에 받을 최대 회차 수</label><input id="max_per_title" type="number" min="1" max="1000" value="{{ config.max_per_title }}"><small>이미 받은 회차는 제외합니다. 자동 수집·목록 지금 받기·기존 파일 보완에 적용됩니다. 수동으로 선택한 회차는 이 상한 없이 모두 처리합니다.</small>
 <label for="request_delay">요청 사이 간격 (초)</label><input id="request_delay" type="number" min="1" max="60" step="0.5" value="{{ config.request_delay }}">
 <label class="mf-check"><input id="make_epub" type="checkbox" {% if config.make_epub %}checked{% endif %}> 받은 회차를 EPUB 합본으로 만들기</label>
 <label for="epub_line_height">EPUB 줄간격 (글자 크기의 배수)</label><input id="epub_line_height" type="number" min="1.2" max="2.5" step="0.1" value="{{ config.epub_line_height }}">
