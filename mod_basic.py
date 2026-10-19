@@ -9,6 +9,7 @@ from framework import F, Job
 from plugin import PluginModuleBase
 
 from .core import Client, Engine, MunpiaError, atomic_write, normalize_cookie, parse_id, title_ids
+from .telegram_feed import TelegramFeed
 
 
 class ModuleBasic(PluginModuleBase):
@@ -24,12 +25,58 @@ class ModuleBasic(PluginModuleBase):
         super().__init__(P, first_menu='setting', name='basic', scheduler_desc='문피아 무료 회차 수집')
         self.engine = None
         self.settings_lock = threading.RLock()
+        self.telegram = TelegramFeed(Path(F.config['path_data']) / 'db')
+        self.telegram_lock = threading.Lock()
 
     def plugin_load(self):
         if not self.P.ModelSetting.get('download_path'):
             self.P.ModelSetting.set('download_path', os.path.join(F.config['path_data'], 'downloads', 'munpia_free'))
         self._engine()
         self.sync_schedule(self.config())
+        self.sync_telegram_schedule()
+
+    def sync_telegram_schedule(self):
+        job_id = self.get_scheduler_name() + '_telegram'
+        enabled = self.telegram.settings()['enabled']
+        if not enabled:
+            if F.scheduler.is_include(job_id):
+                F.scheduler.remove_job(job_id)
+        elif not F.scheduler.is_include(job_id):
+            job = Job(self.P.package_name, job_id, '1', self.telegram_poll, '문피아 텔레그램 링크 수신')
+            F.scheduler.add_job_instance(job, run=False)
+
+    def telegram_append(self, ids):
+        if not ids:
+            return []
+        with F.app.app_context(), self.settings_lock:
+            current = title_ids(self.P.ModelSetting.get('titles') or '')
+            added = [nid for nid in dict.fromkeys(ids) if nid not in current]
+            if len(current) + len(added) > 100:
+                raise MunpiaError('자동 수집 목록이 100개를 초과합니다. 목록 정리 후 다시 수신하세요.')
+            if added:
+                self.P.ModelSetting.set('titles', '\n'.join(current + added))
+            return added
+
+    def telegram_poll(self):
+        import fcntl
+        if not self.telegram_lock.acquire(blocking=False):
+            return '다른 수신 작업이 진행 중입니다.'
+        try:
+            self.telegram.directory.mkdir(parents=True, exist_ok=True)
+            with open(self.telegram.directory / 'munpia_free_telegram.lock', 'a') as handle:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return '다른 수신 작업이 진행 중입니다.'
+                try:
+                    return self.telegram.poll(self.telegram_append)
+                except MunpiaError as exc:
+                    state = self.telegram.state()
+                    state['message'] = str(exc)
+                    self.telegram.write_state(state)
+                    return str(exc)
+        finally:
+            self.telegram_lock.release()
 
     def sync_schedule(self, conf, previous_interval=None):
         job_id = self.get_scheduler_name()
@@ -146,6 +193,19 @@ class ModuleBasic(PluginModuleBase):
                     path = path.parent
                 return jsonify(ret='success', path=str(path))
             engine = self._engine()
+            if command == 'telegram_settings':
+                return jsonify(ret='success', config=self.telegram.public_settings(), state=self.telegram.state()['message'])
+            if command == 'telegram_save':
+                with self.telegram_lock:
+                    result = self.telegram.save(json.loads(arg1 or '{}'))
+                    self.sync_telegram_schedule()
+                return jsonify(ret='success', config=result, msg='텔레그램 설정 저장 완료. 수신은 매분 확인하며 다운로드는 시작하지 않습니다.')
+            if command == 'telegram_check':
+                channel = self.telegram.check(self.telegram.settings())
+                return jsonify(ret='success', msg='채널 연결 확인: ' + channel + ' · 봇을 채널 관리자로 추가하고 새 링크를 게시하세요.')
+            if command == 'telegram_poll':
+                message = self.telegram_poll()
+                return jsonify(ret='success', msg=message, titles=self.P.ModelSetting.get('titles') or '')
             if command == 'status':
                 state = engine.snapshot()
                 state['scheduler_enabled'] = F.scheduler.is_include(self.get_scheduler_name())
@@ -181,6 +241,10 @@ class ModuleBasic(PluginModuleBase):
                     atomic_write(self.cookie_path(), cookie.encode('utf-8'))
                 with self.settings_lock:
                     for key, value in conf.items():
+                        if key == 'titles' and 'titles_base' in raw:
+                            latest = title_ids(self.P.ModelSetting.get('titles') or '')
+                            if latest != title_ids(raw['titles_base']):
+                                raise MunpiaError('자동 수집 목록이 다른 작업에서 변경되었습니다. 새로고침 후 설정을 저장하세요.')
                         self.P.ModelSetting.set(key, str(value))
                 self.sync_schedule(conf, previous_interval)
                 return jsonify(ret='success', msg='설정을 저장했습니다.', cookie_saved=self.cookie_path().is_file())
@@ -220,5 +284,9 @@ class ModuleBasic(PluginModuleBase):
             self.P.logger.warning('문피아 무료 수집 시작 실패: %s', exc)
 
     def plugin_unload(self):
+        job_id = self.get_scheduler_name() + '_telegram'
+        if F.scheduler.is_include(job_id):
+            F.scheduler.remove_job(job_id)
         if self.engine:
             self.engine.cancel()
+

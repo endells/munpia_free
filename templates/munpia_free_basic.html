@@ -15,7 +15,7 @@
 @media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
 </style>
 <div class="mf">
-<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.3.5</small></h3>
+<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.4.0</small></h3>
 <section class="mf-status" aria-label="작업 상태">
 <div class="mf-status-head"><strong class="mf-status-heading">작업 상태</strong><span id="state" class="mf-status-state" role="status">확인 중</span><button id="stop" type="button" class="btn btn-sm btn-outline-danger mf-stop" title="중지해도 완료된 파일은 보존됩니다." disabled>중지</button></div>
 <div class="mf-status-meta"><span id="counts"></span><span id="schedule" class="mf-status-schedule"></span></div>
@@ -24,6 +24,18 @@
 </section>
 <p id="mf-message" role="status"></p>
 {% if page == 'setting' %}
+<div class="mf-card">
+<h5>텔레그램 채널 → 자동 수집 목록</h5>
+<label class="mf-check"><input id="tg_enabled" type="checkbox"> 채널 링크 수신 사용 (매분 확인)</label>
+<label for="tg_token">전용 봇 토큰</label><input id="tg_token" type="password" autocomplete="new-password" placeholder="빈칸으로 저장하면 기존 토큰 유지">
+<small id="tg_saved"></small><label class="mf-check"><input id="tg_clear" type="checkbox"> 저장된 토큰 삭제 (수신 사용도 꺼주세요)</label>
+<label for="tg_channel">채널 ID 또는 공개 채널 사용자명</label><input id="tg_channel" type="text" placeholder="-1001234567890 또는 @my_channel">
+<div class="mf-actions"><button id="tg_save" type="button" class="btn btn-primary">텔레그램 설정 저장</button><button id="tg_check" type="button" class="btn btn-outline-primary">채널 연결 확인</button><button id="tg_poll" type="button" class="btn btn-outline-primary">링크 지금 확인</button></div>
+<p id="tg_state" role="status"></p>
+<small>BotFather에서 만든 전용 봇을 채널 관리자로 추가하세요. 토큰은 이 화면에만 입력하고 공유하지 마세요. 다른 프로그램에서 수신 중인 봇은 사용하지 마세요.</small>
+<small>예: https://nlink.munpia.com/link/munpia/novel/598028 → 598028만 등록. 중복은 제외하고 다운로드는 기존 예약을 따릅니다. 아래 자동 수집 사용을 켜야 예약 다운로드됩니다.</small>
+<small>채널 전체 과거 글은 조회하지 않습니다. 봇이 받은 미처리 게시물(텔레그램 보관 기간 최대 24시간)을 확인합니다. 봇 추가 후 새 링크로 테스트하세요. 비공개 채널은 -100으로 시작하는 채널 ID가 필요합니다.</small>
+</div>
 <div class="mf-card">
 <label for="munpia_cookie">문피아 로그인 쿠키 (선택)</label>
 <textarea id="munpia_cookie" rows="8" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cookie-Editor 등의 JSON 내보내기 결과를 여러 줄 그대로 붙여넣으세요.&#10;기존 형식도 가능: 이름=값; 이름=값"></textarea>
@@ -65,6 +77,7 @@
 var endpoint={{ ('/' + package_name + '/ajax/basic/command')|tojson }}, token={{ csrf_token|tojson }}, page={{ page|tojson }};
 var lastAnalysis='', novelId='', timer=null, historyPage=1, more=false;
 function el(id){return document.getElementById(id);}
+var titlesBase=el('titles')?el('titles').value:'';
 function message(text,bad){el('mf-message').textContent=text||'';el('mf-message').className=bad?'mf-error':'';}
 async function post(command,a,b){
  var body=new URLSearchParams({command:command,csrf_token:token});
@@ -75,6 +88,11 @@ async function post(command,a,b){
 }
 function action(id,fn){if(el(id))el(id).addEventListener('click',async function(){this.disabled=true;try{await fn();}catch(e){message(e.message,true);}finally{this.disabled=id==='prev'?historyPage<=1:id==='next'?!more:id==='add_auto'?!novelId:false;}});}
 function cell(row,text){var td=document.createElement('td');td.textContent=text==null?'':String(text);row.appendChild(td);return td;}
+function tgConfig(c){el('tg_enabled').checked=c.enabled;el('tg_channel').value=c.channel;el('tg_saved').textContent=c.token_saved?'토큰 저장됨 · 빈칸으로 저장하면 유지됩니다.':'저장된 토큰 없음';}
+action('tg_save',async function(){var d=await post('telegram_save',JSON.stringify({enabled:el('tg_enabled').checked,channel:el('tg_channel').value,token:el('tg_token').value,clear_token:el('tg_clear').checked}));el('tg_token').value='';el('tg_clear').checked=false;tgConfig(d.config);el('tg_state').textContent=d.msg;});
+action('tg_check',async function(){el('tg_state').textContent=(await post('telegram_check')).msg;});
+action('tg_poll',async function(){var d=await post('telegram_poll');el('tg_state').textContent=d.msg;message('목록 반영 상태는 페이지 새로고침 후 확인하세요. 아직 저장하지 않은 수정 사항이 있으면 먼저 보관하세요.');});
+if(page==='setting')post('telegram_settings').then(function(d){tgConfig(d.config);el('tg_state').textContent=d.state;}).catch(function(e){message(e.message,true);});
 function renderAnalysis(a){
  if(!el('episodes'))return;novelId=a.novel_id;el('book_title').textContent=a.title;el('episodes').replaceChildren();
  a.episodes.forEach(function(ep){var row=document.createElement('tr'),box=document.createElement('input');box.type='checkbox';box.value=ep.id;box.className='mf-episode';box.disabled=!ep.free||ep.have;box.checked=!box.disabled;cell(row,'').appendChild(box);cell(row,ep.no);cell(row,ep.title);cell(row,ep.have?'받음':ep.free?'무료':'유료/제한');el('episodes').appendChild(row);});
@@ -104,7 +122,7 @@ action('check_login',async function(){
  try{var d=await post('check_login',el('munpia_cookie').value);el('login_result').textContent=d.msg;el('login_result').className=d.authenticated?'':'mf-error';}
  catch(e){el('login_result').textContent=e.message;el('login_result').className='mf-error';throw e;}
 });
-action('save',async function(){var c={};['titles','download_path','episode_digits','max_per_title','request_delay','basic_interval','epub_line_height','epub_paragraph_gap'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});c.cookie=el('munpia_cookie').value;c.clear_cookie=el('clear_cookie').checked;var d=await post('save',JSON.stringify(c));el('munpia_cookie').value='';el('clear_cookie').checked=false;el('cookie_saved').textContent=d.cookie_saved?'저장된 쿠키 있음 · 빈칸으로 저장하면 기존 쿠키를 유지합니다.':'저장된 쿠키 없음';el('login_result').textContent='';message(d.msg);});
+action('save',async function(){var c={titles_base:titlesBase};['titles','download_path','episode_digits','max_per_title','request_delay','basic_interval','epub_line_height','epub_paragraph_gap'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});c.cookie=el('munpia_cookie').value;c.clear_cookie=el('clear_cookie').checked;var d=await post('save',JSON.stringify(c));titlesBase=c.titles;el('munpia_cookie').value='';el('clear_cookie').checked=false;el('cookie_saved').textContent=d.cookie_saved?'저장된 쿠키 있음 · 빈칸으로 저장하면 기존 쿠키를 유지합니다.':'저장된 쿠키 없음';el('login_result').textContent='';message(d.msg);});
 action('run',async function(){message((await post('run')).msg);});
 action('refresh_saved',async function(){message((await post('refresh')).msg);});
 action('refresh_one',async function(){var value=el('novel_url').value.trim();if(!value)throw new Error('작품 주소를 입력하세요.');message((await post('refresh',value)).msg);});
@@ -121,3 +139,4 @@ window.addEventListener('beforeunload',function(){clearTimeout(timer);});
 })();
 </script>
 {% endblock %}
+

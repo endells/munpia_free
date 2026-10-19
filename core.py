@@ -136,6 +136,11 @@ def parse_id(value):
     if re.fullmatch(r'[1-9][0-9]{0,14}', value):
         return value
     u = urllib.parse.urlsplit(value)
+    if (u.scheme in ('https', 'http') and u.hostname == 'nlink.munpia.com'
+            and not u.username and not u.password and not u.port):
+        match = re.fullmatch(r'/link/munpia/novel/([1-9][0-9]{0,14})/?', u.path)
+        if match:
+            return match.group(1)
     if u.scheme not in ('https', 'http') or u.hostname not in ('munpia.com', 'www.munpia.com', 'm.munpia.com') or u.username or u.password or u.port:
         raise MunpiaError('문피아 작품 URL 또는 숫자 작품 번호를 입력하세요.')
     m = re.fullmatch(r'/novel/(?:detail|viewer)/([1-9][0-9]*)(?:/[1-9][0-9]*)?/?', u.path)
@@ -656,3 +661,4 @@ class Engine:
             self.update(status='failed', message=str(exc), finished=now())
         finally:
             handle.close()
+

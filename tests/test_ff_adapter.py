@@ -134,6 +134,41 @@ class AdapterTests(unittest.TestCase):
             self.assertEqual(r.status_code, 200)
             self.assertIn('문피아 무료편 다운', r.get_data(as_text=True))
 
+    def test_telegram_registration_schedule_and_secret_redaction(self):
+        import json
+        previous = dict(self.values)
+        token = '123456:' + 'A' * 30
+        try:
+            self.values['titles'] = '123'
+            with patch.object(self.module._engine(), 'start') as start:
+                response = self.send('telegram_save', arg1=json.dumps({'token': token, 'channel': '-100123', 'enabled': True}))
+                self.assertEqual(response.json['ret'], 'success')
+                self.assertNotIn(token, response.get_data(as_text=True))
+                self.assertIn('munpia_free_basic_telegram', self.jobs)
+                self.assertFalse(self.registrations[-1][1])
+                self.assertEqual(self.module.telegram_append(['598028', '123', '598028']), ['598028'])
+                self.assertEqual(self.values['titles'], '123\n598028')
+                self.assertNotIn(token, self.send('telegram_settings').get_data(as_text=True))
+                def telegram_api(token_value, method, params):
+                    if method == 'getWebhookInfo':
+                        return {'url': ''}
+                    if method == 'getChat':
+                        return {'id': -100123, 'type': 'channel'}
+                    return [{'update_id': 9, 'channel_post': {'chat': {'id': -100123}, 'text': 'https://nlink.munpia.com/link/munpia/novel/456'}}]
+                with patch.object(self.module.telegram, 'api', side_effect=telegram_api):
+                    self.assertEqual(self.send('telegram_poll').json['ret'], 'success')
+                self.assertEqual(self.values['titles'], '123\n598028\n456')
+                stale = self.module.config()
+                stale.update(titles='123', titles_base='123')
+                self.assertEqual(self.send('save', arg1=json.dumps(stale)).json['ret'], 'error')
+                self.assertEqual(self.values['titles'], '123\n598028\n456')
+                start.assert_not_called()
+                self.send('telegram_save', arg1=json.dumps({'channel': '-100123', 'enabled': False, 'clear_token': True}))
+                self.assertNotIn('munpia_free_basic_telegram', self.jobs)
+        finally:
+            self.values.clear()
+            self.values.update(previous)
+
     def test_csrf_and_status_history(self):
         self.assertEqual(self.client.post('/munpia_free/ajax/basic/command',data={'command':'run'}).status_code,403)
         self.assertEqual(self.send('status').json['ret'],'success')
@@ -267,3 +302,4 @@ class AdapterTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
