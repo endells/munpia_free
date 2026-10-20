@@ -129,10 +129,39 @@ class AdapterTests(unittest.TestCase):
             self.values.update(previous)
 
     def test_four_templates_render(self):
-        for page in ['setting','manual','status','history']:
+        for page in ['setting','integration','cookie','manual','status','history','log']:
             r = self.client.get('/munpia_free/basic/'+page)
             self.assertEqual(r.status_code, 200)
             self.assertIn('문피아 무료편 다운', r.get_data(as_text=True))
+
+    def test_separate_tabs_and_cookie_save_preserve_settings(self):
+        html = self.client.get('/munpia_free/basic/setting').get_data(as_text=True)
+        self.assertIn('id="titles"', html)
+        self.assertNotIn('id="tg_token"', html)
+        self.assertNotIn('id="munpia_cookie"', html)
+        html = self.client.get('/munpia_free/basic/integration').get_data(as_text=True)
+        self.assertIn('id="tg_token"', html)
+        self.assertIn('id="dc_url"', html)
+        import json
+        previous = dict(self.values)
+        with patch.object(self.module._engine(), 'start') as start, patch.object(self.module, 'sync_schedule') as schedule:
+            response = self.send('cookie_save', arg1=json.dumps({'cookie': 'session=synthetic-test'}))
+            self.assertTrue(response.json['cookie_saved'])
+            self.assertEqual(previous, self.values)
+            start.assert_not_called()
+            schedule.assert_not_called()
+        self.send('cookie_save', arg1=json.dumps({'clear_cookie': True}))
+
+    def test_discord_configuration_does_not_send_until_test_or_completion(self):
+        import json
+        with patch.object(self.module.discord, 'sender') as sender:
+            response = self.send('discord_save', arg1=json.dumps({'url': 'https://discord.com/api/webhooks/123456/TEST_ONLY', 'enabled': True}))
+            self.assertEqual(response.json['ret'], 'success')
+            sender.assert_not_called()
+            self.assertNotIn('TEST_ONLY', self.send('discord_settings').get_data(as_text=True))
+            self.assertEqual(self.send('discord_test').json['ret'], 'success')
+            sender.assert_called_once()
+            self.send('discord_save', arg1=json.dumps({'enabled': False, 'clear_url': True}))
 
     def test_telegram_registration_schedule_and_secret_redaction(self):
         import json

@@ -549,6 +549,7 @@ class Engine:
 
     def _run(self, kind, ids, config, selected, handle):
         completed = failed = skipped = 0
+        downloads = []
         login_required = False
         try:
             root = Path(config['download_path']).expanduser()
@@ -627,6 +628,8 @@ class Engine:
                         atomic_write(path, data)
                         self.history.record(nid, item, novel['title'], 'completed', path, hashlib.sha256(data).hexdigest())
                         completed += 1
+                        downloads.append({'novel_id': str(nid), 'title': novel['title'],
+                                          'no': item.get('num') or 0, 'episode_title': item.get('title', '')})
                     except Stopped:
                         raise
                     except LoginRequired as exc:
@@ -660,5 +663,13 @@ class Engine:
         except Exception as exc:
             self.update(status='failed', message=str(exc), finished=now())
         finally:
-            handle.close()
+            try:
+                callback = config.get('on_finished')
+                if kind != 'analyze' and callable(callback):
+                    callback({'state': self.snapshot(), 'downloads': downloads,
+                              'source': config.get('run_source', '수동 다운로드' if selected is not None else '저장된 목록 다운로드')})
+            except Exception:
+                self.warn('결과 알림 처리 실패. 완료된 다운로드 파일은 유지됩니다.')
+            finally:
+                handle.close()
 

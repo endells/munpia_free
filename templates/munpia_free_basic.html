@@ -9,13 +9,15 @@
 .mf .mf-stop{flex:none;font-size:12px;line-height:1.2;padding:5px 10px;margin:0}.mf-status-meta{display:flex;flex-wrap:wrap;gap:3px 16px;margin-top:4px;opacity:.8;font-variant-numeric:tabular-nums}.mf-status-schedule{margin-left:auto;white-space:nowrap}
 .mf .mf-status .mf-progress{height:5px;margin-top:7px;border-radius:3px}.mf-status-error{margin-top:6px;overflow-wrap:anywhere}.mf-status-error:empty,#mf-message:empty{display:none}.mf #mf-message:not(:empty){margin:8px 0;font-size:13px}
 @media(max-width:480px){.mf{padding:0 8px}.mf .mf-title{font-size:19px}.mf .mf-status{padding:8px 10px}.mf-status-head{gap:7px}.mf-status-schedule{margin-left:0}.mf-status-meta{font-size:11px;gap:2px 10px}}
+
+.mf{color:#e8edf5}.mf .mf-card,.mf .mf-status{background:#171e29;border-color:#465267;color:#e8edf5}.mf h3,.mf h5,.mf label,.mf summary{color:#f2f6fc}.mf small,.mf-status-meta,.mf-status-state{opacity:1;color:#bdcbe0}.mf input[type=text],.mf input[type=password],.mf input[type=number],.mf textarea{background:#0e141e;color:#f1f5fc;border-color:#5c6c83;color-scheme:dark}.mf input::placeholder,.mf textarea::placeholder{color:#a5b4c9;opacity:1}.mf input:focus,.mf textarea:focus{outline:2px solid #80b9ff;outline-offset:1px}.mf .mf-error{color:#ffacac}.mf .mf-note{background:#102c25;border-color:#65d6b5;color:#d5f8ec}.mf .mf-guide{line-height:1.8}.mf .mf-guide li{margin:8px 0;overflow-wrap:anywhere}.mf .btn-outline-primary{border-color:#7eb5ff;color:#acd1ff;background:#1b2b42}.mf .btn-outline-primary:hover{background:#27456c;color:#fff}.mf .btn-outline-secondary{color:#d7e1ef;border-color:#8899b3}.mf th{background:#223047;color:#fff}.mf td{color:#e2eaf5}.mf tr:nth-child(even){background:#1b2636}.mf a{color:#a9d0ff}.mf .mf-log{background:#0b1018;color:#e8eef7;border:1px solid #5a6c86;border-radius:6px;max-height:65vh;overflow:auto;padding:12px;font:13px/1.7 ui-monospace,Consolas,monospace}.mf-log-line{padding:9px 10px;margin-bottom:6px;border-left:4px solid #77b6ff;background:#172338;white-space:pre-wrap;overflow-wrap:anywhere}.mf-log-line strong{color:#b7d8ff}.mf .mf-level-warning{background:#352b15;border-color:#f5ca72;color:#ffe5af}.mf .mf-level-warning strong{color:#ffe5af}.mf .mf-level-error{background:#351d25;border-color:#ff929f;color:#ffd7dc}.mf .mf-level-error strong{color:#ffb8c2}
 </style>
 <style>
 .mf-path{display:flex;gap:8px;align-items:stretch}.mf-path input[type=text]{flex:1;min-width:0;width:auto}.mf-path button{flex:none;white-space:nowrap}.mf input[type=password]{width:100%;padding:8px;border:1px solid #9998;border-radius:4px}
 @media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
 </style>
 <div class="mf">
-<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.4.0</small></h3>
+<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.5.0</small></h3>
 <section class="mf-status" aria-label="작업 상태">
 <div class="mf-status-head"><strong class="mf-status-heading">작업 상태</strong><span id="state" class="mf-status-state" role="status">확인 중</span><button id="stop" type="button" class="btn btn-sm btn-outline-danger mf-stop" title="중지해도 완료된 파일은 보존됩니다." disabled>중지</button></div>
 <div class="mf-status-meta"><span id="counts"></span><span id="schedule" class="mf-status-schedule"></span></div>
@@ -25,26 +27,6 @@
 <p id="mf-message" role="status"></p>
 {% if page == 'setting' %}
 <div class="mf-card">
-<h5>텔레그램 채널 → 자동 수집 목록</h5>
-<label class="mf-check"><input id="tg_enabled" type="checkbox"> 채널 링크 수신 사용 (매분 확인)</label>
-<label for="tg_token">전용 봇 토큰</label><input id="tg_token" type="password" autocomplete="new-password" placeholder="빈칸으로 저장하면 기존 토큰 유지">
-<small id="tg_saved"></small><label class="mf-check"><input id="tg_clear" type="checkbox"> 저장된 토큰 삭제 (수신 사용도 꺼주세요)</label>
-<label for="tg_channel">채널 ID 또는 공개 채널 사용자명</label><input id="tg_channel" type="text" placeholder="-1001234567890 또는 @my_channel">
-<div class="mf-actions"><button id="tg_save" type="button" class="btn btn-primary">텔레그램 설정 저장</button><button id="tg_check" type="button" class="btn btn-outline-primary">채널 연결 확인</button><button id="tg_poll" type="button" class="btn btn-outline-primary">링크 지금 확인</button></div>
-<p id="tg_state" role="status"></p>
-<small>BotFather에서 만든 전용 봇을 채널 관리자로 추가하세요. 토큰은 이 화면에만 입력하고 공유하지 마세요. 다른 프로그램에서 수신 중인 봇은 사용하지 마세요.</small>
-<small>예: https://nlink.munpia.com/link/munpia/novel/598028 → 598028만 등록. 중복은 제외하고 다운로드는 기존 예약을 따릅니다. 아래 자동 수집 사용을 켜야 예약 다운로드됩니다.</small>
-<small>채널 전체 과거 글은 조회하지 않습니다. 봇이 받은 미처리 게시물(텔레그램 보관 기간 최대 24시간)을 확인합니다. 봇 추가 후 새 링크로 테스트하세요. 비공개 채널은 -100으로 시작하는 채널 ID가 필요합니다.</small>
-</div>
-<div class="mf-card">
-<label for="munpia_cookie">문피아 로그인 쿠키 (선택)</label>
-<textarea id="munpia_cookie" rows="8" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cookie-Editor 등의 JSON 내보내기 결과를 여러 줄 그대로 붙여넣으세요.&#10;기존 형식도 가능: 이름=값; 이름=값"></textarea>
-<small>JSON 배열 또는 {"cookies": [...]} 형식을 지원합니다. 최대 256KB이며 저장 후 입력 내용은 지워집니다.</small>
-<small id="cookie_saved">{% if cookie_saved %}저장된 쿠키 있음 · 빈칸으로 저장하면 기존 쿠키를 유지합니다.{% else %}저장된 쿠키 없음 · 일부 무료 작품은 6화부터 로그인이 필요합니다.{% endif %}</small>
-<label class="mf-check"><input id="clear_cookie" type="checkbox"> 저장 시 기존 쿠키 삭제</label>
-<div class="mf-actions"><button id="check_login" type="button" class="btn btn-outline-primary">로그인 확인</button></div>
-<p id="login_result" role="status"></p>
-<details><summary>확장프로그램으로 쿠키 가져오기</summary><ol><li>Chrome에서 m.munpia.com에 로그인하고 작품 페이지를 여세요.</li><li>Cookie-Editor 등 사용 중인 쿠키 확장프로그램에서 현재 사이트 쿠키를 JSON 형식으로 내보내기/복사하세요.</li><li>처음의 [부터 마지막 ]까지 여러 줄 전체를 위 칸에 붙여넣으세요. 줄바꿈을 지울 필요가 없습니다.</li><li>로그인 확인 → 설정 저장을 누르세요.</li></ol><small>모바일 문피아에 적용되는 도메인·경로·만료 조건에 맞춰 사용합니다. www.munpia.com이나 nssl.munpia.com 전용 쿠키만 있으면 다시 모바일 페이지에서 내보내세요.</small><small>기존 방식도 가능: F12 → Network → 요청의 Headers → Request Headers → Cookie 값을 복사합니다. Set-Cookie는 사용하지 않습니다.</small><small>쿠키는 계정 인증정보입니다. 채팅이나 GitHub에 올리지 말고 FF 설정에만 입력하세요. 저장된 값은 화면에 다시 표시하지 않습니다.</small></details>
 <label for="titles">자동 수집할 작품</label><textarea id="titles" rows="5" placeholder="작품 주소 또는 번호를 한 줄에 하나씩">{{ config.titles }}</textarea><small>예: https://m.munpia.com/novel/detail/599040 · PC 주소도 사용할 수 있습니다.</small>
 <label for="download_path">다운로드 경로</label>
 <div class="mf-path"><input id="download_path" type="text" value="{{ config.download_path }}"><button id="select_download_path" type="button" class="btn btn-outline-primary">경로 선택</button></div>
@@ -64,8 +46,54 @@
 <small>기존 파일 보완: 이미 받은 TXT의 제목·표지·info.xml을 보완하고, 누락된 삽화를 복원합니다. EPUB 사용 시 새 서식으로 합본을 다시 만듭니다. 회차 재조회에는 저장된 쿠키와 작품당 상한이 적용됩니다.</small>
 <div class="mf-note">무료 회차 전용입니다. 유료 회차 구매나 결제는 하지 않습니다. TXT 맨 위에 회차 번호·제목을 넣고, 표지·info.xml·본문 삽화를 함께 저장합니다. EPUB에는 표지와 삽화를 포함합니다.</div>
 </div>
+{% elif page == 'integration' %}
+<div class="mf-card">
+<h5>텔레그램 채널 → 자동 수집 목록</h5>
+<label class="mf-check"><input id="tg_enabled" type="checkbox"> 채널 링크 수신 사용 (매분 확인)</label>
+<label for="tg_token">전용 봇 토큰</label><input id="tg_token" type="password" autocomplete="new-password" placeholder="빈칸으로 저장하면 기존 토큰 유지">
+<small id="tg_saved"></small><label class="mf-check"><input id="tg_clear" type="checkbox"> 저장된 토큰 삭제 (수신 사용도 꺼주세요)</label>
+<label for="tg_channel">채널 ID 또는 공개 채널 사용자명</label><input id="tg_channel" type="text" placeholder="-1001234567890 또는 @my_channel">
+<div class="mf-actions"><button id="tg_save" type="button" class="btn btn-primary">텔레그램 설정 저장</button><button id="tg_check" type="button" class="btn btn-outline-primary">채널 연결 확인</button><button id="tg_poll" type="button" class="btn btn-outline-primary">링크 지금 확인</button></div>
+<p id="tg_state" role="status"></p>
+<small>BotFather에서 만든 전용 봇을 채널 관리자로 추가하세요. 토큰은 이 화면에만 입력하고 공유하지 마세요. 다른 프로그램에서 수신 중인 봇은 사용하지 마세요.</small>
+<small>예: https://nlink.munpia.com/link/munpia/novel/598028 → 598028만 등록. 중복은 제외하고 다운로드는 기존 예약을 따릅니다. 기본 설정 탭의 자동 수집 사용을 켜야 예약 다운로드됩니다.</small>
+<small>채널 전체 과거 글은 조회하지 않습니다. 봇이 받은 미처리 게시물(텔레그램 보관 기간 최대 24시간)을 확인합니다. 봇 추가 후 새 링크로 테스트하세요. 비공개 채널은 -100으로 시작하는 채널 ID가 필요합니다.</small>
+</div>
+<div class="mf-card mf-guide"><h5>텔레그램 연결 순서</h5><ol>
+<li>BotFather에서 /newbot으로 전용 봇을 만듭니다. /mybots에서 실제 @사용자명을 확인합니다.</li>
+<li>텔레그램 채널 → 채널 관리(편집) → 관리자 → <strong>관리자 추가</strong>를 누른 뒤 @봇사용자명을 검색합니다. 기존 관리자 목록의 검색창과 다릅니다.</li>
+<li>공개 채널은 @채널사용자명을 입력합니다. 봇 사용자명이나 채널의 한글 표시 이름을 입력하지 마세요.</li>
+<li>비공개 채널은 게시물을 우클릭 → 메시지 링크 복사를 선택합니다. 예: https://t.me/c/1234567890/5에서 채널 번호는 1234567890입니다. FF에 입력할 ID는 -1001234567890입니다. 정확한 계산식은 -(1000000000000 + 채널 번호)이며 마지막 /5는 게시물 번호입니다. t.me/+… 초대 링크는 사용할 수 없습니다.</li>
+<li>토큰·채널을 입력하고 수신 사용 → 텔레그램 설정 저장 → 채널 연결 확인을 누릅니다.</li>
+<li>채널에 새 문피아 링크를 게시하고 링크 지금 확인을 누릅니다. 설정 탭을 열면 추가된 작품 번호를 확인할 수 있습니다.</li>
+</ol></div>
+<div class="mf-card"><h5>문피아 알리미 → Discord</h5>
+<label class="mf-check"><input id="dc_enabled" type="checkbox"> 자동·수동 다운로드 결과 알림 사용</label>
+<label for="dc_url">Discord 웹훅 URL</label><input id="dc_url" type="password" autocomplete="new-password" placeholder="https://discord.com/api/webhooks/…">
+<small id="dc_saved"></small><label class="mf-check"><input id="dc_clear" type="checkbox"> 저장된 웹훅 삭제 (알림 사용도 꺼주세요)</label>
+<div class="mf-actions"><button id="dc_save" type="button" class="btn btn-primary">알림 설정 저장</button><button id="dc_test" type="button" class="btn btn-outline-primary">테스트 알림 보내기</button></div>
+<p id="dc_state" role="status"></p>
+<div class="mf-note">전송 내용: 작업 유형·작품명·작품 링크·저장한 회차 번호와 제목·완료/실패/건너뜀 건수·오류 또는 경고. 본문 파일과 쿠키는 보내지 않습니다. 새 다운로드나 오류가 없는 정상 확인은 알림을 생략합니다. 알림이 길면 나누어 전송합니다.</div>
+<details class="mf-guide" open><summary>Discord 웹훅 만들기</summary><ol><li>알림을 받을 서버의 일반 텍스트 채널에서 채널 편집 → 연동(Integrations) → 웹훅(Webhooks)으로 이동합니다.</li><li>새 웹훅을 만들고 이름을 ‘문피아 알리미’로 지정한 뒤 웹훅 URL을 복사합니다. 웹훅 관리 권한이 필요합니다.</li><li>위 입력란에 URL을 붙여넣고 알림 사용을 켠 뒤 알림 설정 저장을 누릅니다.</li><li>테스트 알림 보내기를 눌러 해당 Discord 채널에서 확인합니다. 저장만으로 메시지를 보내지는 않습니다.</li></ol><small>웹훅 URL은 인증정보입니다. 이 설정에만 입력하세요. 포럼/미디어 채널 대신 일반 텍스트 채널을 사용하세요.</small></details>
+</div>
+{% elif page == 'cookie' %}
+<div class="mf-card">
+<label for="munpia_cookie">문피아 로그인 쿠키 (선택)</label>
+<textarea id="munpia_cookie" rows="8" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cookie-Editor 등의 JSON 내보내기 결과를 여러 줄 그대로 붙여넣으세요.&#10;기존 형식도 가능: 이름=값; 이름=값"></textarea>
+<small>JSON 배열 또는 {"cookies": [...]} 형식을 지원합니다. 최대 256KB이며 저장 후 입력 내용은 지워집니다.</small>
+<small id="cookie_saved">{% if cookie_saved %}저장된 쿠키 있음 · 빈칸으로 저장하면 기존 쿠키를 유지합니다.{% else %}저장된 쿠키 없음 · 일부 무료 작품은 6화부터 로그인이 필요합니다.{% endif %}</small>
+<label class="mf-check"><input id="clear_cookie" type="checkbox"> 저장 시 기존 쿠키 삭제</label>
+<div class="mf-actions"><button id="check_login" type="button" class="btn btn-outline-primary">로그인 확인</button></div>
+<p id="login_result" role="status"></p>
+<details><summary>확장프로그램으로 쿠키 가져오기</summary><ol><li>Chrome에서 m.munpia.com에 로그인하고 작품 페이지를 여세요.</li><li>Cookie-Editor 등 사용 중인 쿠키 확장프로그램에서 현재 사이트 쿠키를 JSON 형식으로 내보내기/복사하세요.</li><li>처음의 [부터 마지막 ]까지 여러 줄 전체를 위 칸에 붙여넣으세요. 줄바꿈을 지울 필요가 없습니다.</li><li>로그인 확인 → 쿠키 저장을 누르세요.</li></ol><small>모바일 문피아에 적용되는 도메인·경로·만료 조건에 맞춰 사용합니다. www.munpia.com이나 nssl.munpia.com 전용 쿠키만 있으면 다시 모바일 페이지에서 내보내세요.</small><small>기존 방식도 가능: F12 → Network → 요청의 Headers → Request Headers → Cookie 값을 복사합니다. Set-Cookie는 사용하지 않습니다.</small><small>쿠키는 계정 인증정보입니다. 채팅이나 GitHub에 올리지 말고 FF 설정에만 입력하세요. 저장된 값은 화면에 다시 표시하지 않습니다.</small></details>
+<div class="mf-actions"><button id="cookie_save" type="button" class="btn btn-primary">쿠키 저장</button></div>
+<small>쿠키 저장은 작품 목록·자동 수집 예약을 변경하거나 다운로드를 시작하지 않습니다.</small></div>
 {% elif page == 'manual' %}
 <div class="mf-card"><label for="novel_url">작품 주소 또는 번호</label><input id="novel_url" type="text" placeholder="https://m.munpia.com/novel/detail/599040"><div class="mf-actions"><button id="analyze" class="btn btn-primary">회차 분석</button><button id="download" class="btn btn-success" disabled>선택 회차 받기</button><button id="add_auto" type="button" class="btn btn-outline-primary" title="분석한 작품을 설정 목록에 저장합니다. 즉시 다운로드하지 않습니다." disabled>자동 수집 목록에 추가</button><button id="refresh_one" class="btn btn-outline-primary">이 작품 기존 파일 보완</button></div><h5 id="book_title"></h5><label class="mf-check"><input id="select_all" type="checkbox"> 받을 수 있는 회차 전체 선택</label><div class="mf-scroll"><table><thead><tr><th>선택</th><th>번호</th><th>회차</th><th>상태</th></tr></thead><tbody id="episodes"></tbody></table></div></div>
+{% elif page == 'log' %}
+<div class="mf-card"><h5>작업 로그</h5><p>최근 300건 · 최신순 · 최대 1,000건 보관 · 이 버전 적용 이후 기록</p>
+<div class="mf-actions"><button id="log_refresh" type="button" class="btn btn-outline-primary">새로고침</button><label class="mf-check"><input id="log_auto" type="checkbox" checked> 자동 갱신</label><a class="btn btn-outline-primary" href="/{{ package_name }}/log">FF 원본 로그 열기</a></div>
+<div id="activity_log" class="mf-log" role="log" aria-label="작업 로그"></div></div>
 {% elif page == 'history' %}
 <div class="mf-card"><div class="mf-actions"><button id="refresh" class="btn btn-secondary">새로고침</button><button id="prev" class="btn btn-outline-secondary">이전</button><span id="page_no"></span><button id="next" class="btn btn-outline-secondary">다음</button></div><div class="mf-scroll"><table><thead><tr><th>작품 / 회차</th><th>결과</th><th>경로 또는 오류</th><th>시각</th></tr></thead><tbody id="history"></tbody></table></div></div>
 {% endif %}
@@ -92,7 +120,7 @@ function tgConfig(c){el('tg_enabled').checked=c.enabled;el('tg_channel').value=c
 action('tg_save',async function(){var d=await post('telegram_save',JSON.stringify({enabled:el('tg_enabled').checked,channel:el('tg_channel').value,token:el('tg_token').value,clear_token:el('tg_clear').checked}));el('tg_token').value='';el('tg_clear').checked=false;tgConfig(d.config);el('tg_state').textContent=d.msg;});
 action('tg_check',async function(){el('tg_state').textContent=(await post('telegram_check')).msg;});
 action('tg_poll',async function(){var d=await post('telegram_poll');el('tg_state').textContent=d.msg;message('목록 반영 상태는 페이지 새로고침 후 확인하세요. 아직 저장하지 않은 수정 사항이 있으면 먼저 보관하세요.');});
-if(page==='setting')post('telegram_settings').then(function(d){tgConfig(d.config);el('tg_state').textContent=d.state;}).catch(function(e){message(e.message,true);});
+if(page==='integration')post('telegram_settings').then(function(d){tgConfig(d.config);el('tg_state').textContent=d.state;}).catch(function(e){message(e.message,true);});
 function renderAnalysis(a){
  if(!el('episodes'))return;novelId=a.novel_id;el('book_title').textContent=a.title;el('episodes').replaceChildren();
  a.episodes.forEach(function(ep){var row=document.createElement('tr'),box=document.createElement('input');box.type='checkbox';box.value=ep.id;box.className='mf-episode';box.disabled=!ep.free||ep.have;box.checked=!box.disabled;cell(row,'').appendChild(box);cell(row,ep.no);cell(row,ep.title);cell(row,ep.have?'받음':ep.free?'무료':'유료/제한');el('episodes').appendChild(row);});
@@ -122,7 +150,19 @@ action('check_login',async function(){
  try{var d=await post('check_login',el('munpia_cookie').value);el('login_result').textContent=d.msg;el('login_result').className=d.authenticated?'':'mf-error';}
  catch(e){el('login_result').textContent=e.message;el('login_result').className='mf-error';throw e;}
 });
-action('save',async function(){var c={titles_base:titlesBase};['titles','download_path','episode_digits','max_per_title','request_delay','basic_interval','epub_line_height','epub_paragraph_gap'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});c.cookie=el('munpia_cookie').value;c.clear_cookie=el('clear_cookie').checked;var d=await post('save',JSON.stringify(c));titlesBase=c.titles;el('munpia_cookie').value='';el('clear_cookie').checked=false;el('cookie_saved').textContent=d.cookie_saved?'저장된 쿠키 있음 · 빈칸으로 저장하면 기존 쿠키를 유지합니다.':'저장된 쿠키 없음';el('login_result').textContent='';message(d.msg);});
+action('save',async function(){var c={titles_base:titlesBase};['titles','download_path','episode_digits','max_per_title','request_delay','basic_interval','epub_line_height','epub_paragraph_gap'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});var d=await post('save',JSON.stringify(c));titlesBase=c.titles;message(d.msg);});
+function cookieSaved(saved){el('cookie_saved').textContent=saved?'저장된 쿠키 있음 · 빈칸으로 저장하면 유지합니다.':'저장된 쿠키 없음';}
+action('cookie_save',async function(){var d=await post('cookie_save',JSON.stringify({cookie:el('munpia_cookie').value,clear_cookie:el('clear_cookie').checked}));el('munpia_cookie').value='';el('clear_cookie').checked=false;cookieSaved(d.cookie_saved);message(d.msg);});
+function dcConfig(c){el('dc_enabled').checked=c.enabled;el('dc_saved').textContent=c.url_saved?'웹훅 저장됨 · 빈칸으로 저장하면 유지됩니다.':'저장된 웹훅 없음';}
+action('dc_save',async function(){var d=await post('discord_save',JSON.stringify({enabled:el('dc_enabled').checked,url:el('dc_url').value,clear_url:el('dc_clear').checked}));el('dc_url').value='';el('dc_clear').checked=false;dcConfig(d.config);el('dc_state').textContent=d.msg;});
+action('dc_test',async function(){el('dc_state').textContent=(await post('discord_test')).msg;});
+if(page==='integration')post('discord_settings').then(function(d){dcConfig(d.config);}).catch(function(e){message(e.message,true);});
+var logTimer=null;
+async function activity(){var d=await post('activity');el('activity_log').replaceChildren();if(!d.rows.length)el('activity_log').textContent='아직 기록된 작업이 없습니다.';d.rows.forEach(function(r){var line=document.createElement('div');line.className='mf-log-line mf-level-'+(r.level==='ERROR'||r.level==='CRITICAL'?'error':r.level==='WARNING'?'warning':'info');var label=document.createElement('strong');label.textContent=new Date(r.time).toLocaleString()+' ['+r.level+'] ';var body=document.createElement('span');body.textContent=r.message;line.append(label,body);el('activity_log').appendChild(line);});}
+action('log_refresh',activity);
+async function logPoll(){try{if(el('log_auto').checked)await activity();}catch(e){message(e.message,true);}finally{logTimer=setTimeout(logPoll,5000);}}
+if(page==='log')logPoll();
+window.addEventListener('beforeunload',function(){clearTimeout(logTimer);});
 action('run',async function(){message((await post('run')).msg);});
 action('refresh_saved',async function(){message((await post('refresh')).msg);});
 action('refresh_one',async function(){var value=el('novel_url').value.trim();if(!value)throw new Error('작품 주소를 입력하세요.');message((await post('refresh',value)).msg);});

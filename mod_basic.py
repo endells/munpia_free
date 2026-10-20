@@ -10,6 +10,7 @@ from plugin import PluginModuleBase
 
 from .core import Client, Engine, MunpiaError, atomic_write, normalize_cookie, parse_id, title_ids
 from .telegram_feed import TelegramFeed
+from .notifications import ActivityLog, DiscordNotifier
 
 
 class ModuleBasic(PluginModuleBase):
@@ -27,6 +28,8 @@ class ModuleBasic(PluginModuleBase):
         self.settings_lock = threading.RLock()
         self.telegram = TelegramFeed(Path(F.config['path_data']) / 'db')
         self.telegram_lock = threading.Lock()
+        self.activity = ActivityLog(Path(F.config['path_data']) / 'db' / 'munpia_free_activity.db')
+        self.discord = DiscordNotifier(Path(F.config['path_data']) / 'db')
 
     def plugin_load(self):
         if not self.P.ModelSetting.get('download_path'):
@@ -34,6 +37,26 @@ class ModuleBasic(PluginModuleBase):
         self._engine()
         self.sync_schedule(self.config())
         self.sync_telegram_schedule()
+        if hasattr(self.P.logger, 'addHandler') and self.activity not in self.P.logger.handlers:
+            self.P.logger.addHandler(self.activity)
+        self.activity.add('INFO', '문피아 무료편 다운 시작')
+
+    def download_finished(self, report):
+        state = report['state']
+        self.activity.add('ERROR' if state.get('failed') or state['status'] in ('failed', 'auth_required') else 'INFO',
+                          '%s: %s · 완료 %s · 실패 %s · 건너뜀 %s' % (report['source'], state['message'], state.get('completed', 0), state.get('failed', 0), state.get('skipped', 0)))
+        for item in report['downloads']:
+            self.activity.add('INFO', '%s [%s] / %s. %s 저장 완료' % (item['title'], item['novel_id'], item['no'], item['episode_title']))
+        if state.get('last_error'):
+            self.activity.add('ERROR', state['last_error'])
+        if state.get('last_warning'):
+            self.activity.add('WARNING', state['last_warning'])
+        try:
+            if self.discord.notify(report):
+                self.activity.add('INFO', 'Discord 다운로드 결과 알림 전송 완료')
+        except MunpiaError as exc:
+            self.activity.add('ERROR', str(exc))
+            self._engine().warn(str(exc))
 
     def sync_telegram_schedule(self):
         job_id = self.get_scheduler_name() + '_telegram'
@@ -55,6 +78,7 @@ class ModuleBasic(PluginModuleBase):
                 raise MunpiaError('자동 수집 목록이 100개를 초과합니다. 목록 정리 후 다시 수신하세요.')
             if added:
                 self.P.ModelSetting.set('titles', '\n'.join(current + added))
+                self.activity.add('INFO', '텔레그램 자동 목록 추가: ' + ', '.join(added))
             return added
 
     def telegram_poll(self):
@@ -71,6 +95,7 @@ class ModuleBasic(PluginModuleBase):
                 try:
                     return self.telegram.poll(self.telegram_append)
                 except MunpiaError as exc:
+                    self.activity.add('ERROR', str(exc))
                     state = self.telegram.state()
                     state['message'] = str(exc)
                     self.telegram.write_state(state)
@@ -119,6 +144,7 @@ class ModuleBasic(PluginModuleBase):
         conf = self.config()
         conf['cookie'] = self.read_cookie()
         conf['remove_paid_title'] = self.remove_paid_title
+        conf['on_finished'] = self.download_finished
         return conf
 
     def remove_paid_title(self, nid):
@@ -159,7 +185,7 @@ class ModuleBasic(PluginModuleBase):
                 'basic_auto_start': flag('basic_auto_start')}
 
     def process_menu(self, page, req):
-        if page not in ('setting', 'manual', 'status', 'history'):
+        if page not in ('setting', 'integration', 'cookie', 'manual', 'status', 'history', 'log'):
             page = 'setting'
         token_key = 'munpia_free_csrf'
         if token_key not in session:
@@ -180,7 +206,7 @@ class ModuleBasic(PluginModuleBase):
                     raise MunpiaError('로그인한 문피아의 쿠키를 먼저 입력하세요.')
                 logged_in = Client(cookie=cookie).login_status()
                 return jsonify(ret='success', authenticated=logged_in,
-                               msg='문피아 로그인 확인 완료. 새 쿠키를 입력했다면 설정 저장을 눌러 적용하세요.' if logged_in else '로그인되지 않았습니다. 문피아에 다시 로그인한 뒤 모바일 웹 요청의 Cookie 값을 복사하세요.')
+                               msg='문피아 로그인 확인 완료. 새 쿠키를 입력했다면 쿠키 저장을 눌러 적용하세요.' if logged_in else '로그인되지 않았습니다. 문피아에 다시 로그인한 뒤 모바일 웹 요청의 Cookie 값을 복사하세요.')
             if command == 'browse_path':
                 path = Path(os.path.normpath(str(arg1 or '/').strip() or '/'))
                 if not path.is_absolute():
@@ -193,6 +219,28 @@ class ModuleBasic(PluginModuleBase):
                     path = path.parent
                 return jsonify(ret='success', path=str(path))
             engine = self._engine()
+            if command == 'activity':
+                return jsonify(ret='success', rows=self.activity.rows())
+            if command == 'discord_settings':
+                return jsonify(ret='success', config=self.discord.public_settings())
+            if command == 'discord_save':
+                result = self.discord.save(json.loads(arg1 or '{}'))
+                return jsonify(ret='success', config=result, msg='문피아 알리미 설정을 저장했습니다.')
+            if command == 'discord_test':
+                self.discord.test()
+                self.activity.add('INFO', 'Discord 테스트 알림 전송 완료')
+                return jsonify(ret='success', msg='Discord 채널에 테스트 알림을 보냈습니다.')
+            if command == 'cookie_save':
+                raw = json.loads(arg1 or '{}')
+                cookie = normalize_cookie(raw.get('cookie', ''))
+                if raw.get('clear_cookie') is True:
+                    try:
+                        self.cookie_path().unlink()
+                    except FileNotFoundError:
+                        pass
+                elif cookie:
+                    atomic_write(self.cookie_path(), cookie.encode('utf-8'))
+                return jsonify(ret='success', cookie_saved=self.cookie_path().is_file(), msg='쿠키 설정을 저장했습니다.')
             if command == 'telegram_settings':
                 return jsonify(ret='success', config=self.telegram.public_settings(), state=self.telegram.state()['message'])
             if command == 'telegram_save':
@@ -262,6 +310,7 @@ class ModuleBasic(PluginModuleBase):
                 engine.start('download', title_ids(conf['titles']), conf)
             elif command == 'refresh':
                 conf = self.runtime_config()
+                conf['run_source'] = '기존 파일 보완'
                 ids = [parse_id(arg1)] if arg1 else title_ids(conf['titles'])
                 engine.start('refresh', ids, conf)
             elif command == 'stop':
@@ -279,11 +328,14 @@ class ModuleBasic(PluginModuleBase):
     def scheduler_function(self):
         try:
             conf = self.runtime_config()
+            conf['run_source'] = '자동 수집'
             self._engine().start('download', title_ids(conf['titles']), conf)
         except Exception as exc:
             self.P.logger.warning('문피아 무료 수집 시작 실패: %s', exc)
 
     def plugin_unload(self):
+        if hasattr(self.P.logger, 'removeHandler'):
+            self.P.logger.removeHandler(self.activity)
         job_id = self.get_scheduler_name() + '_telegram'
         if F.scheduler.is_include(job_id):
             F.scheduler.remove_job(job_id)

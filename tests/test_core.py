@@ -197,6 +197,23 @@ class Tests(unittest.TestCase):
         self.assertEqual(len(s['analysis']['episodes']), 3)
         self.assertEqual(sum(e['have'] for e in s['analysis']['episodes']), 2)
 
+    def test_finish_callback_for_manual_auto_and_notification_failure(self):
+        reports = []
+        self.conf['on_finished'] = reports.append
+        self.conf['run_source'] = '자동 수집'
+        engine = self.engine()
+        self.run_engine(engine, selected=['10', '30'])
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(len(reports[0]['downloads']), 2)
+        self.assertEqual(reports[0]['source'], '자동 수집')
+        self.run_engine(engine, kind='analyze')
+        self.assertEqual(len(reports), 1)
+        def broken(report):
+            raise RuntimeError('notification unavailable')
+        self.conf['on_finished'] = broken
+        self.assertEqual(self.run_engine(engine)['status'], 'completed')
+        self.assertEqual(len(engine.history.rows(nid='1')), 2)
+
     def test_cookie_transport_login_and_error_redaction(self):
         secret = 'session=synthetic-secret; another=value'
         self.assertEqual(c.normalize_cookie('Cookie: ' + secret), secret)
@@ -290,3 +307,4 @@ class Tests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
