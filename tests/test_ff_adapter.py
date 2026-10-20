@@ -203,6 +203,33 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(self.send('status').json['ret'],'success')
         self.assertEqual(self.send('history',arg1='1').json['rows'],[])
 
+    def test_telegram_interval_reschedules_without_immediate_run(self):
+        import json
+        job_id = 'munpia_free_basic_telegram'
+        raw = {'token': '123456:' + 'A'*30, 'channel': '-100123', 'enabled': True, 'interval_minutes': 3}
+        try:
+            with patch.object(self.module, 'telegram_poll') as poll, patch.object(self.module._engine(), 'start') as start:
+                self.assertEqual(self.send('telegram_save', arg1=json.dumps(raw)).json['ret'], 'success')
+                first = self.registered_jobs[job_id]
+                self.assertEqual(first.interval, '3')
+                self.send('telegram_save', arg1=json.dumps(raw))
+                self.assertIs(self.registered_jobs[job_id], first)
+                raw['interval_minutes'] = 10
+                self.send('telegram_save', arg1=json.dumps(raw))
+                self.assertEqual(self.registered_jobs[job_id].interval, '10')
+                self.assertFalse(self.registrations[-1][1])
+                poll.assert_not_called()
+                start.assert_not_called()
+                self.jobs.discard(job_id)
+                self.module.sync_telegram_schedule()
+                self.assertEqual(self.registered_jobs[job_id].interval, '10')
+                raw['interval_minutes'] = 0
+                self.assertEqual(self.send('telegram_save', arg1=json.dumps(raw)).json['ret'], 'error')
+                self.assertEqual(self.module.telegram.settings()['interval_minutes'], 10)
+        finally:
+            raw.update(enabled=False, clear_token=True, interval_minutes=1)
+            self.send('telegram_save', arg1=json.dumps(raw))
+
     def test_settings_validation_and_schedule(self):
         import json
         conf=self.module.config()

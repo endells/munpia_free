@@ -17,7 +17,7 @@
 @media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
 </style>
 <div class="mf">
-<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.5.0</small></h3>
+<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.5.1</small></h3>
 <section class="mf-status" aria-label="작업 상태">
 <div class="mf-status-head"><strong class="mf-status-heading">작업 상태</strong><span id="state" class="mf-status-state" role="status">확인 중</span><button id="stop" type="button" class="btn btn-sm btn-outline-danger mf-stop" title="중지해도 완료된 파일은 보존됩니다." disabled>중지</button></div>
 <div class="mf-status-meta"><span id="counts"></span><span id="schedule" class="mf-status-schedule"></span></div>
@@ -49,7 +49,9 @@
 {% elif page == 'integration' %}
 <div class="mf-card">
 <h5>텔레그램 채널 → 자동 수집 목록</h5>
-<label class="mf-check"><input id="tg_enabled" type="checkbox"> 채널 링크 수신 사용 (매분 확인)</label>
+<label class="mf-check"><input id="tg_enabled" type="checkbox"> 채널 링크 수신 사용</label>
+<label for="tg_interval">텔레그램 채널 수신 간격 (분)</label><input id="tg_interval" type="number" min="1" max="1440" step="1" value="1">
+<small>1~1440분 · 기본 1분. 간격을 바꾸면 저장 시점부터 새 간격으로 예약됩니다. 다운로드 주기와는 별개이며, 링크 지금 확인은 즉시 수신합니다.</small>
 <label for="tg_token">전용 봇 토큰</label><input id="tg_token" type="password" autocomplete="new-password" placeholder="빈칸으로 저장하면 기존 토큰 유지">
 <small id="tg_saved"></small><label class="mf-check"><input id="tg_clear" type="checkbox"> 저장된 토큰 삭제 (수신 사용도 꺼주세요)</label>
 <label for="tg_channel">채널 ID 또는 공개 채널 사용자명</label><input id="tg_channel" type="text" placeholder="-1001234567890 또는 @my_channel">
@@ -116,8 +118,8 @@ async function post(command,a,b){
 }
 function action(id,fn){if(el(id))el(id).addEventListener('click',async function(){this.disabled=true;try{await fn();}catch(e){message(e.message,true);}finally{this.disabled=id==='prev'?historyPage<=1:id==='next'?!more:id==='add_auto'?!novelId:false;}});}
 function cell(row,text){var td=document.createElement('td');td.textContent=text==null?'':String(text);row.appendChild(td);return td;}
-function tgConfig(c){el('tg_enabled').checked=c.enabled;el('tg_channel').value=c.channel;el('tg_saved').textContent=c.token_saved?'토큰 저장됨 · 빈칸으로 저장하면 유지됩니다.':'저장된 토큰 없음';}
-action('tg_save',async function(){var d=await post('telegram_save',JSON.stringify({enabled:el('tg_enabled').checked,channel:el('tg_channel').value,token:el('tg_token').value,clear_token:el('tg_clear').checked}));el('tg_token').value='';el('tg_clear').checked=false;tgConfig(d.config);el('tg_state').textContent=d.msg;});
+function tgConfig(c){el('tg_enabled').checked=c.enabled;el('tg_channel').value=c.channel;el('tg_interval').value=c.interval_minutes;el('tg_saved').textContent=c.token_saved?'토큰 저장됨 · 빈칸으로 저장하면 유지됩니다.':'저장된 토큰 없음';}
+action('tg_save',async function(){var d=await post('telegram_save',JSON.stringify({enabled:el('tg_enabled').checked,interval_minutes:el('tg_interval').value,channel:el('tg_channel').value,token:el('tg_token').value,clear_token:el('tg_clear').checked}));el('tg_token').value='';el('tg_clear').checked=false;tgConfig(d.config);el('tg_state').textContent=d.msg;});
 action('tg_check',async function(){el('tg_state').textContent=(await post('telegram_check')).msg;});
 action('tg_poll',async function(){var d=await post('telegram_poll');el('tg_state').textContent=d.msg;message('목록 반영 상태는 페이지 새로고침 후 확인하세요. 아직 저장하지 않은 수정 사항이 있으면 먼저 보관하세요.');});
 if(page==='integration')post('telegram_settings').then(function(d){tgConfig(d.config);el('tg_state').textContent=d.state;}).catch(function(e){message(e.message,true);});

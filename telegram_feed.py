@@ -11,13 +11,17 @@ def validate_settings(raw):
     token = str(raw.get('token', '')).strip()
     channel = str(raw.get('channel', '')).strip()
     enabled = raw.get('enabled') is True
+    interval_raw = str(raw.get('interval_minutes', 1)).strip()
+    if not re.fullmatch(r'[0-9]+', interval_raw) or not 1 <= int(interval_raw) <= 1440:
+        raise MunpiaError('텔레그램 수신 간격은 1~1440분 사이의 정수로 입력하세요.')
+    interval = int(interval_raw)
     if token and not re.fullmatch(r'[0-9]{5,20}:[A-Za-z0-9_-]{20,100}', token):
         raise MunpiaError('텔레그램 봇 토큰 형식을 확인하세요.')
     if channel and not re.fullmatch(r'-100[0-9]+|@[A-Za-z][A-Za-z0-9_]{4,31}', channel):
         raise MunpiaError('채널 ID(-100으로 시작) 또는 @채널사용자명을 입력하세요.')
     if enabled and not (token and channel):
         raise MunpiaError('수신을 켜려면 봇 토큰과 채널을 입력하세요.')
-    return {'token': token, 'channel': channel, 'enabled': enabled}
+    return {'token': token, 'channel': channel, 'enabled': enabled, 'interval_minutes': interval}
 
 
 def extract_ids(message):
@@ -51,11 +55,13 @@ class TelegramFeed:
 
     def public_settings(self):
         conf = self.settings()
-        return {'enabled': conf['enabled'], 'channel': conf['channel'], 'token_saved': bool(conf['token'])}
+        return {'enabled': conf['enabled'], 'channel': conf['channel'], 'token_saved': bool(conf['token']),
+                'interval_minutes': conf['interval_minutes']}
 
     def save(self, raw):
         previous = self.settings()
         raw = dict(raw)
+        raw.setdefault('interval_minutes', previous['interval_minutes'])
         if not raw.get('token'):
             raw['token'] = previous['token']
         if raw.get('clear_token') is True:

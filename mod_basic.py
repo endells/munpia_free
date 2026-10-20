@@ -58,14 +58,19 @@ class ModuleBasic(PluginModuleBase):
             self.activity.add('ERROR', str(exc))
             self._engine().warn(str(exc))
 
-    def sync_telegram_schedule(self):
+    def sync_telegram_schedule(self, previous_interval=None):
         job_id = self.get_scheduler_name() + '_telegram'
-        enabled = self.telegram.settings()['enabled']
+        conf = self.telegram.settings()
+        enabled = conf['enabled']
+        interval = conf['interval_minutes']
         if not enabled:
             if F.scheduler.is_include(job_id):
                 F.scheduler.remove_job(job_id)
-        elif not F.scheduler.is_include(job_id):
-            job = Job(self.P.package_name, job_id, '1', self.telegram_poll, '문피아 텔레그램 링크 수신')
+        elif (not F.scheduler.is_include(job_id)
+              or (previous_interval is not None and previous_interval != interval)):
+            if F.scheduler.is_include(job_id):
+                F.scheduler.remove_job(job_id)
+            job = Job(self.P.package_name, job_id, str(interval), self.telegram_poll, '문피아 텔레그램 링크 수신')
             F.scheduler.add_job_instance(job, run=False)
 
     def telegram_append(self, ids):
@@ -245,9 +250,10 @@ class ModuleBasic(PluginModuleBase):
                 return jsonify(ret='success', config=self.telegram.public_settings(), state=self.telegram.state()['message'])
             if command == 'telegram_save':
                 with self.telegram_lock:
+                    previous_interval = self.telegram.settings()['interval_minutes']
                     result = self.telegram.save(json.loads(arg1 or '{}'))
-                    self.sync_telegram_schedule()
-                return jsonify(ret='success', config=result, msg='텔레그램 설정 저장 완료. 수신은 매분 확인하며 다운로드는 시작하지 않습니다.')
+                    self.sync_telegram_schedule(previous_interval)
+                return jsonify(ret='success', config=result, msg='텔레그램 설정 저장 완료. 수신 간격: %s분. 저장만으로 수신·다운로드를 시작하지 않습니다.' % result['interval_minutes'])
             if command == 'telegram_check':
                 channel = self.telegram.check(self.telegram.settings())
                 return jsonify(ret='success', msg='채널 연결 확인: ' + channel + ' · 봇을 채널 관리자로 추가하고 새 링크를 게시하세요.')

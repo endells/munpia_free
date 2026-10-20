@@ -87,6 +87,21 @@ class TelegramTests(unittest.TestCase):
                 TelegramFeed.request(self.token, 'getUpdates', {})
         self.assertNotIn(self.token, str(ctx.exception))
 
+    def test_interval_validation_migration_and_cursor_preservation(self):
+        self.assertEqual(validate_settings({})['interval_minutes'], 1)
+        for value in [0, -1, 1441, '1.5', '', True, None]:
+            with self.assertRaises(MunpiaError):
+                validate_settings({'interval_minutes': value})
+        for value in [1, '5', 1440]:
+            self.assertEqual(validate_settings({'interval_minutes': value})['interval_minutes'], int(value))
+        self.feed.write_state({'offset': 123, 'message': 'test'})
+        self.feed.save({'channel': '-100123', 'enabled': True, 'interval_minutes': '5'})
+        restarted = TelegramFeed(self.tmp.name, self.api)
+        self.assertEqual(restarted.public_settings()['interval_minutes'], 5)
+        self.assertEqual(restarted.state()['offset'], 123)
+        restarted.save({'channel': '-100123', 'enabled': True})
+        self.assertEqual(restarted.settings()['interval_minutes'], 5)
+
 
 if __name__ == '__main__':
     unittest.main()
