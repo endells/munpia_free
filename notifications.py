@@ -82,8 +82,7 @@ def summary_messages(report):
         group = grouped.setdefault(item['novel_id'], {'title': item['title'], 'episodes': []})
         group['episodes'].append('%s. %s' % (item['no'], item['episode_title']))
     for nid, group in grouped.items():
-        lines += ['', '%s — %s회 저장' % (group['title'][:180], len(group['episodes'])),
-                  'https://m.munpia.com/novel/detail/' + nid]
+        lines += ['', '%s — %s회 저장' % (group['title'][:180], len(group['episodes']))]
         lines += ['  ' + name[:240] for name in group['episodes']]
     if state.get('last_error') or state['status'] in ('failed', 'auth_required'):
         lines += ['', '오류: ' + redact(state.get('last_error') or state.get('message', ''))[:600]]
@@ -173,3 +172,4 @@ class DiscordNotifier:
         if not conf['url']:
             raise MunpiaError('웹훅 URL을 먼저 저장하세요.')
         self.sender(conf['url'], '문피아 알리미 · 테스트 알림\n다운로드 결과가 이 채널로 전송됩니다.')
+

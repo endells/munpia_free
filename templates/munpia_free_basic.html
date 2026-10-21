@@ -17,7 +17,7 @@
 @media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
 </style>
 <div class="mf">
-<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.5.2</small></h3>
+<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.5.3</small></h3>
 <section class="mf-status" aria-label="작업 상태">
 <div class="mf-status-head"><strong class="mf-status-heading">작업 상태</strong><span id="state" class="mf-status-state" role="status">확인 중</span><button id="stop" type="button" class="btn btn-sm btn-outline-danger mf-stop" title="중지해도 완료된 파일은 보존됩니다." disabled>중지</button></div>
 <div class="mf-status-meta"><span id="counts"></span><span id="schedule" class="mf-status-schedule"></span></div>
@@ -75,7 +75,7 @@
 <small id="dc_saved"></small><label class="mf-check"><input id="dc_clear" type="checkbox"> 저장된 웹훅 삭제 (알림 사용도 꺼주세요)</label>
 <div class="mf-actions"><button id="dc_save" type="button" class="btn btn-primary">알림 설정 저장</button><button id="dc_test" type="button" class="btn btn-outline-primary">테스트 알림 보내기</button></div>
 <p id="dc_state" role="status"></p>
-<div class="mf-note">전송 내용: 작업 유형·작품명·작품 링크·저장한 회차 번호와 제목·완료/실패/건너뜀 건수·오류 또는 경고. 본문 파일과 쿠키는 보내지 않습니다. 새 다운로드나 오류가 없는 정상 확인은 알림을 생략합니다. 알림이 길면 나누어 전송합니다.</div>
+<div class="mf-note">전송 내용: 작업 유형·작품명·저장한 회차 번호와 제목·완료/실패/건너뜀 건수·오류 또는 경고. 본문 파일과 쿠키는 보내지 않습니다. 새 다운로드나 오류가 없는 정상 확인은 알림을 생략합니다. 알림이 길면 나누어 전송합니다.</div>
 <details class="mf-guide" open><summary>Discord 웹훅 만들기</summary><ol><li>알림을 받을 서버의 일반 텍스트 채널에서 채널 편집 → 연동(Integrations) → 웹훅(Webhooks)으로 이동합니다.</li><li>새 웹훅을 만들고 이름을 ‘문피아 알리미’로 지정한 뒤 웹훅 URL을 복사합니다. 웹훅 관리 권한이 필요합니다.</li><li>위 입력란에 URL을 붙여넣고 알림 사용을 켠 뒤 알림 설정 저장을 누릅니다.</li><li>테스트 알림 보내기를 눌러 해당 Discord 채널에서 확인합니다. 저장만으로 메시지를 보내지는 않습니다.</li></ol><small>웹훅 URL은 인증정보입니다. 이 설정에만 입력하세요. 포럼/미디어 채널 대신 일반 텍스트 채널을 사용하세요.</small></details>
 </div>
 {% elif page == 'cookie' %}
@@ -181,4 +181,5 @@ window.addEventListener('beforeunload',function(){clearTimeout(timer);});
 })();
 </script>
 {% endblock %}
+
 
