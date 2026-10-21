@@ -21,6 +21,20 @@ class NotificationTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_summary_times_are_korean_without_timezone_suffix(self):
+        for source in ('자동 수집', '수동 다운로드'):
+            self.report['source'] = source
+            for timestamp, expected in (
+                ('2026-10-21T00:22:24+00:00', '2026-10-21 09:22:24'),
+                ('2026-10-21T18:22:24Z', '2026-10-22 03:22:24'),
+                ('2026-10-21T09:22:24+09:00', '2026-10-21 09:22:24'),
+                ('2026-10-21T00:22:24', '2026-10-21 09:22:24'),
+            ):
+                with self.subTest(source=source, timestamp=timestamp):
+                    self.report['state']['finished'] = timestamp
+                    message = summary_messages(self.report)[-1]
+                    self.assertEqual(message.splitlines()[-1], '종료: ' + expected)
+
     def test_disabled_no_send_save_redaction_and_test(self):
         self.assertFalse(self.notifier.notify(self.report))
         public = self.notifier.save({'enabled': True, 'url': self.url})

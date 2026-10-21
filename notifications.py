@@ -1,4 +1,5 @@
 """Discord download summaries and a bounded, credential-redacted activity log."""
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 from pathlib import Path
@@ -55,6 +56,20 @@ def webhook_url(value):
     return value
 
 
+KOREA_TIME = timezone(timedelta(hours=9))
+
+
+def notification_time(value):
+    """Render engine timestamps in Korean time, independently of the host TZ."""
+    try:
+        stamp = datetime.fromisoformat(str(value or now()).replace('Z', '+00:00'))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        return stamp.astimezone(KOREA_TIME).strftime('%Y-%m-%d %H:%M:%S')
+    except (ValueError, TypeError, OverflowError):
+        return '시간 확인 불가'
+
+
 def summary_messages(report):
     state = report['state']
     source = report.get('source', '수동 다운로드')
@@ -74,7 +89,7 @@ def summary_messages(report):
         lines += ['', '오류: ' + redact(state.get('last_error') or state.get('message', ''))[:600]]
     if state.get('warnings'):
         lines += ['경고: ' + redact(state.get('last_warning', ''))[:500]]
-    lines += ['종료: ' + state.get('finished', now())]
+    lines += ['종료: ' + notification_time(state.get('finished'))]
     messages, current = [], ''
     for line in lines:
         line = line[:900]
