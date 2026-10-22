@@ -70,6 +70,44 @@ def notification_time(value):
         return '시간 확인 불가'
 
 
+def episode_summary(episodes):
+    if len(episodes) == 1:
+        item = episodes[0]
+        return ['  %s. %s' % (item['no'], item['episode_title'][:240])]
+    numbers, unknown = set(), 0
+    for item in episodes:
+        try:
+            number = int(item['no'])
+            if number <= 0:
+                raise ValueError()
+            numbers.add(number)
+        except (ValueError, TypeError):
+            unknown += 1
+    ranges = []
+    start = end = None
+    for number in sorted(numbers):
+        if start is None:
+            start = end = number
+        elif number == end + 1:
+            end = number
+        else:
+            ranges.append('%03d화' % start if start == end else '%03d-%03d화' % (start, end))
+            start = end = number
+    if start is not None:
+        ranges.append('%03d화' % start if start == end else '%03d-%03d화' % (start, end))
+    if unknown:
+        ranges.append('회차 번호 미확인 %s편' % unknown)
+    lines, line = [], '  '
+    for value in ranges:
+        if len(line) + len(value) > 800:
+            lines.append(line.rstrip(', '))
+            line = '  '
+        line += value + ', '
+    if line.strip():
+        lines.append(line.rstrip(', '))
+    return lines
+
+
 def summary_messages(report):
     state = report['state']
     source = report.get('source', '수동 다운로드')
@@ -80,10 +118,10 @@ def summary_messages(report):
     grouped = {}
     for item in report.get('downloads', []):
         group = grouped.setdefault(item['novel_id'], {'title': item['title'], 'episodes': []})
-        group['episodes'].append('%s. %s' % (item['no'], item['episode_title']))
+        group['episodes'].append(item)
     for nid, group in grouped.items():
         lines += ['', '%s — %s회 저장' % (group['title'][:180], len(group['episodes']))]
-        lines += ['  ' + name[:240] for name in group['episodes']]
+        lines += episode_summary(group['episodes'])
     if state.get('last_error') or state['status'] in ('failed', 'auth_required'):
         lines += ['', '오류: ' + redact(state.get('last_error') or state.get('message', ''))[:600]]
     if state.get('warnings'):
@@ -172,4 +210,5 @@ class DiscordNotifier:
         if not conf['url']:
             raise MunpiaError('웹훅 URL을 먼저 저장하세요.')
         self.sender(conf['url'], '문피아 알리미 · 테스트 알림\n다운로드 결과가 이 채널로 전송됩니다.')
+
 

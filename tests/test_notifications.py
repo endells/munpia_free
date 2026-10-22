@@ -59,12 +59,22 @@ class NotificationTests(unittest.TestCase):
         self.report['state']['status'] = 'canceled'
         self.assertTrue(self.notifier.notify(self.report))
 
-    def test_long_summary_keeps_all_episode_names_within_limit(self):
-        self.report['downloads'] = [{'novel_id': '123', 'title': '시험', 'no': i, 'episode_title': '회차-%s 😀' % i} for i in range(1000)]
+    def test_multiple_episodes_are_compact_ranges(self):
+        self.report['downloads'] = [{'novel_id': '123', 'title': '시험', 'no': i, 'episode_title': '회차-%s' % i} for i in range(1, 1001)]
+        messages = summary_messages(self.report)
+        self.assertEqual(len(messages), 1)
+        self.assertIn('001-1000화', messages[0])
+        self.assertNotIn('회차-1', messages[0])
+        self.report['downloads'] = [self.report['downloads'][i-1] for i in (7, 1, 2, 3, 5, 6, 10)]
+        self.assertIn('001-003화, 005-007화, 010화', summary_messages(self.report)[0])
+
+    def test_sparse_ranges_are_not_truncated(self):
+        self.report['downloads'] = [{'novel_id': '123', 'title': '시험', 'no': i, 'episode_title': '시험'} for i in range(1, 2000, 2)]
         messages = summary_messages(self.report)
         self.assertGreater(len(messages), 1)
         self.assertTrue(all(len(s.encode('utf-16-le')) // 2 <= 2000 for s in messages))
-        self.assertIn('회차-999', '\n'.join(messages))
+        for i in range(1, 2000, 2):
+            self.assertIn('%03d화' % i, '\n'.join(messages))
 
     def test_reject_non_discord_and_redact_network_error(self):
         for url in ['http://discord.com/api/webhooks/1/x', 'https://discord.com.evil.test/api/webhooks/1/x', 'https://127.0.0.1/x']:
@@ -94,3 +104,4 @@ class NotificationTests(unittest.TestCase):
         self.assertNotIn(self.url, row['message'])
         self.assertNotIn('secret', row['message'])
         self.assertEqual(row['level'], 'ERROR')
+
