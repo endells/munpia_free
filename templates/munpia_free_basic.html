@@ -67,7 +67,7 @@
 .mf .mf-log{background:#0e1726;color:#e8eff9}.mf details{margin-top:12px}.mf summary{cursor:pointer;color:#d9ebff!important}.mf [hidden]{display:none!important}
 </style>
 <div class="mf">
-<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.6.0</small></h3>
+<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.6.1</small></h3>
 <section class="mf-status" aria-label="작업 상태">
 <div class="mf-status-head"><strong class="mf-status-heading">작업 상태</strong><span id="state" class="mf-status-state" role="status">확인 중</span><button id="stop" type="button" class="btn btn-sm btn-outline-danger mf-stop" title="중지해도 완료된 파일은 보존됩니다." disabled>중지</button></div>
 <div class="mf-status-meta"><span id="counts"></span><span id="schedule" class="mf-status-schedule"></span></div>
@@ -78,6 +78,9 @@
 {% if page == 'setting' %}
 <div class="mf-card">
 <label for="titles">자동 수집할 작품</label><textarea id="titles" rows="5" placeholder="작품 주소 또는 번호를 한 줄에 하나씩">{{ config.titles }}</textarea><small>예: https://m.munpia.com/novel/detail/599040 · PC 주소도 사용할 수 있습니다.</small>
+<div class="mf-actions"><input id="add_title" type="text" placeholder="추가할 작품 주소 또는 번호" aria-label="추가할 작품"><button id="register_title" type="button" class="btn btn-primary">작품 추가</button><button id="refresh_titles" type="button" class="btn btn-outline-primary">목록 새로고침</button></div>
+<small>추가·제외는 바로 저장됩니다. 작품명은 분석 또는 수집 후 표시하며, 저장 회차는 다운로드 완료 이력 기준입니다. 목록을 직접 편집한 경우 먼저 설정 저장을 누르세요.</small>
+<div class="mf-scroll"><table><thead><tr><th>작품</th><th>저장 회차</th><th>관리</th></tr></thead><tbody id="title_list"></tbody></table></div>
 <label for="download_path">다운로드 경로</label>
 <div class="mf-path"><input id="download_path" type="text" value="{{ config.download_path }}"><button id="select_download_path" type="button" class="btn btn-outline-primary">경로 선택</button></div>
 <small>경로 선택으로 폴더를 찾은 뒤 아래의 설정 저장을 누르세요. 직접 입력도 가능합니다.</small>
@@ -168,6 +171,19 @@ async function post(command,a,b){
 }
 function action(id,fn){if(el(id))el(id).addEventListener('click',async function(){this.disabled=true;try{await fn();}catch(e){message(e.message,true);}finally{this.disabled=id==='prev'?historyPage<=1:id==='next'?!more:id==='add_auto'?!novelId:false;}});}
 function cell(row,text){var td=document.createElement('td');td.textContent=text==null?'':String(text);row.appendChild(td);return td;}
+function requireSavedTitles(){if(el('titles').value!==titlesBase)throw new Error('작품 목록에 저장하지 않은 수정이 있습니다. 먼저 설정 저장을 눌러주세요.');}
+async function autoTitles(){
+ var d=await post('titles');
+ // A user may type while the request is in flight: never replace that draft.
+ if(el('titles').value===titlesBase){el('titles').value=d.titles;titlesBase=d.titles;}
+ var list=el('title_list');list.replaceChildren();
+ if(!d.rows.length){var empty=document.createElement('tr');var td=cell(empty,'등록된 작품이 없습니다. 위에서 작품을 추가하세요.');td.colSpan=3;list.appendChild(empty);return;}
+ d.rows.forEach(function(book){var tr=document.createElement('tr');cell(tr,book.title+' ['+book.id+']');cell(tr,book.completed+'회');var td=cell(tr,'');var actions=document.createElement('div');actions.className='mf-actions';td.appendChild(actions);
+ [['지금 받기','run_title'],['목록에서 제외','remove_auto']].forEach(function(pair){var b=document.createElement('button');b.type='button';b.textContent=pair[0];b.className='btn btn-outline-primary';b.addEventListener('click',async function(){b.disabled=true;try{requireSavedTitles();message((await post(pair[1],book.id)).msg);if(pair[1]==='remove_auto')await autoTitles();}catch(e){message(e.message,true);}finally{b.disabled=false;}});actions.appendChild(b);});list.appendChild(tr);});
+}
+action('register_title',async function(){requireSavedTitles();var value=el('add_title').value.trim();if(!value)throw new Error('추가할 작품 주소 또는 번호를 입력하세요.');message((await post('add_auto',value)).msg);el('add_title').value='';await autoTitles();});
+action('refresh_titles',async function(){requireSavedTitles();await autoTitles();});
+if(page==='setting')autoTitles().catch(function(e){message(e.message,true);});
 function tgConfig(c){el('tg_enabled').checked=c.enabled;el('tg_channel').value=c.channel;el('tg_interval').value=c.interval_minutes;el('tg_saved').textContent=c.token_saved?'토큰 저장됨 · 빈칸으로 저장하면 유지됩니다.':'저장된 토큰 없음';}
 action('tg_save',async function(){var d=await post('telegram_save',JSON.stringify({enabled:el('tg_enabled').checked,interval_minutes:el('tg_interval').value,channel:el('tg_channel').value,token:el('tg_token').value,clear_token:el('tg_clear').checked}));el('tg_token').value='';el('tg_clear').checked=false;tgConfig(d.config);el('tg_state').textContent=d.msg;});
 action('tg_check',async function(){el('tg_state').textContent=(await post('telegram_check')).msg;});
@@ -212,7 +228,7 @@ action('check_login',async function(){
  try{var d=await post('check_login',el('munpia_cookie').value);el('login_result').textContent=d.msg;el('login_result').className=d.authenticated?'':'mf-error';}
  catch(e){el('login_result').textContent=e.message;el('login_result').className='mf-error';throw e;}
 });
-action('save',async function(){var c={titles_base:titlesBase};['titles','download_path','episode_digits','max_per_title','request_delay','basic_interval','epub_line_height','epub_paragraph_gap'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});var d=await post('save',JSON.stringify(c));titlesBase=c.titles;message(d.msg);});
+action('save',async function(){var c={titles_base:titlesBase};['titles','download_path','episode_digits','max_per_title','request_delay','basic_interval','epub_line_height','epub_paragraph_gap'].forEach(function(k){c[k]=el(k).value;});['make_epub','include_author_comment','basic_auto_start'].forEach(function(k){c[k]=el(k).checked;});var d=await post('save',JSON.stringify(c));titlesBase=c.titles;message(d.msg);await autoTitles();});
 function cookieSaved(saved){el('cookie_saved').textContent=saved?'저장된 쿠키 있음 · 빈칸으로 저장하면 유지합니다.':'저장된 쿠키 없음';}
 action('cookie_save',async function(){var d=await post('cookie_save',JSON.stringify({cookie:el('munpia_cookie').value,clear_cookie:el('clear_cookie').checked}));el('munpia_cookie').value='';el('clear_cookie').checked=false;cookieSaved(d.cookie_saved);message(d.msg);});
 function dcConfig(c){el('dc_enabled').checked=c.enabled;el('dc_saved').textContent=c.url_saved?'웹훅 저장됨 · 빈칸으로 저장하면 유지됩니다.':'저장된 웹훅 없음';}
@@ -241,5 +257,6 @@ window.addEventListener('beforeunload',function(){clearTimeout(timer);});
 })();
 </script>
 {% endblock %}
+
 
 

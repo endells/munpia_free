@@ -413,6 +413,16 @@ class History:
             db.execute('INSERT OR REPLACE INTO recent_books(novel_id,title) VALUES(?,?)', (str(nid), str(title)))
             db.execute('DELETE FROM recent_books WHERE position NOT IN (SELECT position FROM recent_books ORDER BY position DESC LIMIT 5)')
 
+    def auto_books(self, ids):
+        rows = []
+        with self.connect() as db:
+            for nid in ids:
+                recent = db.execute('SELECT title FROM recent_books WHERE novel_id=?', (nid,)).fetchone()
+                entry = db.execute('SELECT title FROM entries WHERE novel_id=? ORDER BY updated DESC LIMIT 1', (nid,)).fetchone()
+                count = db.execute("SELECT COUNT(*) FROM entries WHERE novel_id=? AND status='completed'", (nid,)).fetchone()[0]
+                rows.append({'id': nid, 'title': recent['title'] if recent else entry['title'] if entry else '아직 확인하지 않은 작품', 'completed': count})
+        return rows
+
     def recent_books(self):
         with self.connect() as db:
             rows = [dict(row) for row in db.execute('SELECT novel_id AS id,title FROM recent_books ORDER BY position DESC LIMIT 5')]
@@ -692,5 +702,6 @@ class Engine:
                 self.warn('결과 알림 처리 실패. 완료된 다운로드 파일은 유지됩니다.')
             finally:
                 handle.close()
+
 
 

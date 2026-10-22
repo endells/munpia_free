@@ -264,6 +264,17 @@ class ModuleBasic(PluginModuleBase):
                 state = engine.snapshot()
                 state['scheduler_enabled'] = F.scheduler.is_include(self.get_scheduler_name())
                 return jsonify(ret='success', state=state)
+            if command == 'titles':
+                with self.settings_lock:
+                    titles = self.P.ModelSetting.get('titles') or ''
+                    rows = engine.history.auto_books(title_ids(titles))
+                return jsonify(ret='success', rows=rows, titles=titles)
+            if command == 'remove_auto':
+                nid = parse_id(arg1)
+                with self.settings_lock:
+                    current = title_ids(self.P.ModelSetting.get('titles') or '')
+                    self.P.ModelSetting.set('titles', '\n'.join(x for x in current if x != nid))
+                return jsonify(ret='success', msg='자동 수집 목록에서 제외했습니다. 기존 파일과 이력은 유지합니다. 실행 중인 작업에는 다음 실행부터 반영됩니다.')
             if command == 'recent_books':
                 return jsonify(ret='success', rows=engine.history.recent_books())
             if command == 'history':
@@ -278,6 +289,7 @@ class ModuleBasic(PluginModuleBase):
                         return jsonify(ret='success', added=False, novel_id=nid,
                                        msg='이미 자동 수집 목록에 등록된 작품입니다. (' + nid + ')')
                     updated = current.rstrip() + '\n' + nid if current.strip() else nid
+                    title_ids(updated)  # Enforce the same 100-title limit as settings and Telegram.
                     self.P.ModelSetting.set('titles', updated)
                 # Only append the title: do not start work, enable or reset a schedule.
                 return jsonify(ret='success', added=True, novel_id=nid,
@@ -313,6 +325,13 @@ class ModuleBasic(PluginModuleBase):
                 if not isinstance(selected, list) or not selected or len(selected) > 10000 or any(not str(x).isdigit() for x in selected):
                     raise MunpiaError('다운로드할 회차를 선택하세요.')
                 engine.start('download', [nid], self.runtime_config(), selected=selected)
+            elif command == 'run_title':
+                nid = parse_id(arg1)
+                conf = self.runtime_config()
+                if nid not in title_ids(conf['titles']):
+                    raise MunpiaError('자동 수집 목록에 없는 작품입니다. 목록을 새로고침하세요.')
+                conf['run_source'] = '자동 수집 목록 · 작품별 지금 받기'
+                engine.start('download', [nid], conf)
             elif command == 'run':
                 conf = self.runtime_config()
                 engine.start('download', title_ids(conf['titles']), conf)
@@ -349,5 +368,6 @@ class ModuleBasic(PluginModuleBase):
             F.scheduler.remove_job(job_id)
         if self.engine:
             self.engine.cancel()
+
 
 

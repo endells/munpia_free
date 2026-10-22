@@ -94,6 +94,33 @@ class AdapterTests(unittest.TestCase):
     def send(self, command, **kw):
         return self.client.post('/munpia_free/ajax/basic/command',data={'command':command,'csrf_token':self.token,**kw})
 
+    def test_auto_title_management(self):
+        previous = dict(self.values)
+        engine = self.module._engine()
+        try:
+            self.values['titles'] = '987654'
+            engine.history.record('987654', {'id': 1, 'num': 1}, '관리 시험', 'completed')
+            with patch.object(engine, 'start') as start, patch.object(self.module, 'sync_schedule') as schedule:
+                rows = self.send('titles').get_json()['rows']
+                self.assertEqual(rows, [{'id': '987654', 'title': '관리 시험', 'completed': 1}])
+                self.assertEqual(self.send('run_title', arg1='987654').get_json()['ret'], 'success')
+                self.assertEqual(start.call_args.args[:2], ('download', ['987654']))
+                start.reset_mock()
+                self.assertEqual(self.send('remove_auto', arg1='987654').get_json()['ret'], 'success')
+                self.assertEqual(self.values['titles'], '')
+                self.assertEqual(len(engine.history.rows(nid='987654')), 1)
+                self.assertEqual(self.send('run_title', arg1='987654').get_json()['ret'], 'error')
+                start.assert_not_called()
+                schedule.assert_not_called()
+                self.values['titles'] = '\n'.join(str(n) for n in range(1, 101))
+                self.assertEqual(self.send('add_auto', arg1='101').get_json()['ret'], 'error')
+                self.assertEqual(len(self.values['titles'].splitlines()), 100)
+        finally:
+            with engine.history.connect() as db:
+                db.execute('DELETE FROM entries WHERE novel_id=?', ('987654',))
+            self.values.clear()
+            self.values.update(previous)
+
     def test_add_auto_preserves_settings_and_does_not_start_work(self):
         previous = dict(self.values)
         try:
@@ -358,4 +385,5 @@ class AdapterTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
 
