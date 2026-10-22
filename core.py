@@ -406,6 +406,25 @@ class History:
                 novel_id TEXT, entry_id TEXT, title TEXT, episode_title TEXT,
                 seq INTEGER, status TEXT, path TEXT, sha256 TEXT, error TEXT,
                 updated TEXT, PRIMARY KEY(novel_id,entry_id))''')
+            db.execute('CREATE TABLE IF NOT EXISTS recent_books (position INTEGER PRIMARY KEY AUTOINCREMENT, novel_id TEXT UNIQUE, title TEXT)')
+
+    def remember_book(self, nid, title):
+        with self.connect() as db:
+            db.execute('INSERT OR REPLACE INTO recent_books(novel_id,title) VALUES(?,?)', (str(nid), str(title)))
+            db.execute('DELETE FROM recent_books WHERE position NOT IN (SELECT position FROM recent_books ORDER BY position DESC LIMIT 5)')
+
+    def recent_books(self):
+        with self.connect() as db:
+            rows = [dict(row) for row in db.execute('SELECT novel_id AS id,title FROM recent_books ORDER BY position DESC LIMIT 5')]
+            # Show existing downloaded books immediately after upgrading, too.
+            seen = {row['id'] for row in rows}
+            for row in db.execute('SELECT novel_id AS id,title,MAX(updated) FROM entries GROUP BY novel_id ORDER BY MAX(updated) DESC,novel_id LIMIT 10'):
+                if len(rows) >= 5:
+                    break
+                if row['id'] not in seen:
+                    rows.append({'id': row['id'], 'title': row['title']})
+                    seen.add(row['id'])
+            return rows
 
     @contextmanager
     def connect(self):
@@ -561,6 +580,7 @@ class Engine:
                 client.check()
                 self.update(message='작품 %s 목록을 확인합니다.' % nid)
                 novel = client.detail(nid)
+                self.history.remember_book(nid, novel['title'])
                 chapters = client.chapters(nid)
                 # Only prune saved-list downloads after a complete, successful listing.
                 remove_paid = config.get('remove_paid_title')
@@ -672,4 +692,5 @@ class Engine:
                 self.warn('결과 알림 처리 실패. 완료된 다운로드 파일은 유지됩니다.')
             finally:
                 handle.close()
+
 

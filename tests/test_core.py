@@ -50,6 +50,20 @@ class Tests(unittest.TestCase):
         self.assertFalse(engine.thread.is_alive())
         return engine.snapshot()
 
+    def test_recent_books_deduplicate_limit_and_persist(self):
+        history = c.History(self.root / 'recent.db')
+        history.record('99', {'id': 1}, '기존 작품', 'completed')
+        self.assertEqual(history.recent_books()[0]['id'], '99')
+        for nid in range(1, 8):
+            history.remember_book(nid, '작품 %s' % nid)
+        history.remember_book(5, '바뀐 제목')
+        rows = c.History(self.root / 'recent.db').recent_books()
+        self.assertEqual([r['id'] for r in rows], ['5', '7', '6', '4', '3'])
+        self.assertEqual(rows[0]['title'], '바뀐 제목')
+        engine = self.engine()
+        self.run_engine(engine, kind='analyze')
+        self.assertEqual(engine.history.recent_books()[0]['title'], '시험 책 <제목>')
+
     def test_urls_and_input_safety(self):
         self.assertEqual(c.parse_id('https://m.munpia.com/novel/detail/599040?x=1'), '599040')
         self.assertEqual(c.parse_id('https://www.munpia.com/novel/viewer/599040/12'), '599040')
@@ -307,4 +321,5 @@ class Tests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 

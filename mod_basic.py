@@ -264,6 +264,8 @@ class ModuleBasic(PluginModuleBase):
                 state = engine.snapshot()
                 state['scheduler_enabled'] = F.scheduler.is_include(self.get_scheduler_name())
                 return jsonify(ret='success', state=state)
+            if command == 'recent_books':
+                return jsonify(ret='success', rows=engine.history.recent_books())
             if command == 'history':
                 page = max(1, min(100000, int(arg1 or 1)))
                 rows = engine.history.rows(51, (page - 1) * 50)
@@ -347,4 +349,5 @@ class ModuleBasic(PluginModuleBase):
             F.scheduler.remove_job(job_id)
         if self.engine:
             self.engine.cancel()
+
 

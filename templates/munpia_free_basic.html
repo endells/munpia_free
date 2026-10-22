@@ -16,8 +16,58 @@
 .mf-path{display:flex;gap:8px;align-items:stretch}.mf-path input[type=text]{flex:1;min-width:0;width:auto}.mf-path button{flex:none;white-space:nowrap}.mf input[type=password]{width:100%;padding:8px;border:1px solid #9998;border-radius:4px}
 @media(max-width:480px){.mf-path{flex-wrap:wrap}.mf-path input[type=text]{flex-basis:100%}}
 </style>
+<style>
+/* Scoped dark palette; explicitly color cells to override inherited FF skin colors. */
+.mf{--mf-bg:#101827;--mf-surface:#182335;--mf-input:#0e1726;--mf-border:#435674;--mf-text:#e8eff9;--mf-muted:#b8c9df;max-width:1150px;margin:14px auto;padding:18px;background:var(--mf-bg);color:var(--mf-text)!important;border:1px solid #34465f;border-radius:12px;color-scheme:dark;line-height:1.6}
+.mf h3{font-size:22px;margin:0 0 14px;color:#f3f7ff!important}
+.mf small{display:block;color:var(--mf-muted)!important;line-height:1.6;margin-top:5px}
+.mf-card{padding:18px;margin:14px 0;background:var(--mf-surface)!important;color:var(--mf-text)!important;border:1px solid var(--mf-border);border-radius:10px}
+.mf-status{padding:10px 14px;border:1px solid #4776aa;border-left:5px solid #6fb4ff;border-radius:8px;background:#162e4a!important;color:#edf5ff!important;font-size:13px}
+.mf input[type=password],.mf input[type=text],.mf input[type=number],.mf textarea{border:1px solid #60799a!important;border-radius:5px;padding:8px;width:100%;background:var(--mf-input)!important;color:#f0f5ff!important;caret-color:#91c6ff}
+.mf input::placeholder,.mf textarea::placeholder{color:#a4b7cf!important;opacity:1}
+.mf select{display:block;width:100%;height:auto;padding:8px;border:1px solid #60799a!important;border-radius:5px;background:var(--mf-input)!important;color:#f0f5ff!important}
+.mf input[type=checkbox]{accent-color:#69b3ff;cursor:pointer;width:16px;height:16px;vertical-align:middle}
+.mf input[type=checkbox]:disabled{cursor:not-allowed;opacity:.65}
+.mf input:focus,.mf textarea:focus,.mf button:focus-visible{outline:2px solid #91c6ff!important;outline-offset:2px}
+.mf label{display:block;margin:12px 0 5px;font-weight:600}
+.mf-check{font-weight:400!important}
+.mf-check input{margin-right:7px}
+.mf-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0}
+.mf button{border:1px solid #6984a7!important;border-radius:5px;padding:7px 12px;background:#293d58!important;color:#f0f5ff!important;font-weight:600;transition:background .12s,border-color .12s}
+.mf button:hover:not(:disabled){background:#365477!important;border-color:#a1cfff!important}
+.mf .btn-primary{background:#285fa8!important;color:#fff!important;border-color:#7db4ff!important}
+.mf .btn-primary:hover:not(:disabled){background:#3477c8!important}
+.mf button:disabled{background:#202e42!important;color:#a8b9ce!important;border-color:#495d77!important;opacity:.8;cursor:not-allowed}
+.mf-note{background:#30291e!important;color:#f8dba5!important;border:1px solid #826638;border-left:4px solid #e5b860;padding:12px;border-radius:6px;line-height:1.7}
+.mf .mf-error{color:#ffb3bd!important;white-space:pre-wrap;overflow-wrap:anywhere}
+.mf .mf-error:not(:empty){background:#3d202d;border:1px solid #965566;border-radius:5px;padding:7px 9px;margin-top:7px}
+.mf .mf-scroll{max-height:560px;overflow:auto;border:1px solid #526885;border-radius:7px;background:#172235;scrollbar-color:#718aa9 #172235}
+.mf .mf-scroll table{width:100%;border-collapse:collapse;background:#172235!important;color:var(--mf-text)!important;margin:0!important}
+.mf .mf-scroll table th,.mf .mf-scroll table td{padding:9px 10px;border-bottom:1px solid #40526d!important;text-align:left;word-break:break-word;color:#e8eff9!important;background:#172235!important}
+.mf .mf-scroll table th{background:#304561!important;color:#f5f8ff!important;position:sticky;top:0;z-index:1;font-weight:700}
+.mf .mf-scroll table tbody tr:nth-child(even) td{background:#1e2d43!important}
+.mf .mf-scroll table tbody tr:hover td{background:#2b405b!important}
+.mf .mf-scroll table tbody tr:has(input:checked) td{background:#294c73!important;color:#fff!important}
+.mf #episodes td:first-child,.mf #episodes th:first-child{width:55px;text-align:center}
+.mf #episodes td:nth-child(2),.mf #episodes th:nth-child(2){width:70px;font-variant-numeric:tabular-nums}
+.mf #episodes td:last-child,.mf #episodes th:last-child{min-width:130px}
+.mf progress{width:100%;height:7px;display:block;margin-top:6px;border:0;border-radius:4px;overflow:hidden;background:#314760;accent-color:#71b7ff}
+.mf progress::-webkit-progress-bar{background:#314760}
+.mf progress::-webkit-progress-value{background:#71b7ff}
+.mf progress::-moz-progress-bar{background:#71b7ff}
+.mf #counts{color:#c1d5ef!important;font-size:12px}
+.mf .badge{font-size:11px;color:#d9ebff!important;background:#29466c!important;padding:3px 7px;border:1px solid #5c88bd;vertical-align:middle}
+.mf a{color:#9bcaff!important}
+.mf [hidden]{display:none!important}
+
+@media(max-width:650px){.mf{padding:12px 8px}.mf .mf-card{padding:12px}.mf .mf-scroll table td,.mf .mf-scroll table th{padding:7px;font-size:12px}}
+.mf .mf-title{margin-bottom:14px}.mf .mf-version{display:inline-block;background:#29466c;color:#d9ebff!important;border:1px solid #5c88bd;border-radius:4px;padding:3px 7px;font-size:11px;vertical-align:middle}
+.mf .mf-status{background:#162e4a!important;border:1px solid #4776aa;border-left:5px solid #6fb4ff;padding:10px 14px}.mf .mf-status-state{color:#edf5ff;white-space:normal;overflow-wrap:anywhere}.mf .mf-status-meta{color:#c1d5ef}.mf .mf-progress{background:#314760}.mf .mf-progress div{background:#71b7ff}
+.mf .mf-check{align-items:center;font-weight:400}.mf .mf-check input{flex:0 0 16px;margin:0}.mf .mf-actions{align-items:center}.mf .mf-path input{width:auto}.mf .mf-recent button{max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}.mf .btn-success{background:#24614f!important;border-color:#70c7aa!important}.mf .btn-outline-danger{background:#492536!important;border-color:#bd7289!important}
+.mf .mf-log{background:#0e1726;color:#e8eff9}.mf details{margin-top:12px}.mf summary{cursor:pointer;color:#d9ebff!important}.mf [hidden]{display:none!important}
+</style>
 <div class="mf">
-<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.5.3</small></h3>
+<h3 class="mf-title">문피아 무료편 다운 <small class="mf-version">v0.6.0</small></h3>
 <section class="mf-status" aria-label="작업 상태">
 <div class="mf-status-head"><strong class="mf-status-heading">작업 상태</strong><span id="state" class="mf-status-state" role="status">확인 중</span><button id="stop" type="button" class="btn btn-sm btn-outline-danger mf-stop" title="중지해도 완료된 파일은 보존됩니다." disabled>중지</button></div>
 <div class="mf-status-meta"><span id="counts"></span><span id="schedule" class="mf-status-schedule"></span></div>
@@ -91,7 +141,7 @@
 <div class="mf-actions"><button id="cookie_save" type="button" class="btn btn-primary">쿠키 저장</button></div>
 <small>쿠키 저장은 작품 목록·자동 수집 예약을 변경하거나 다운로드를 시작하지 않습니다.</small></div>
 {% elif page == 'manual' %}
-<div class="mf-card"><label for="novel_url">작품 주소 또는 번호</label><input id="novel_url" type="text" placeholder="https://m.munpia.com/novel/detail/599040"><div class="mf-actions"><button id="analyze" class="btn btn-primary">회차 분석</button><button id="download" class="btn btn-success" disabled>선택 회차 받기</button><button id="add_auto" type="button" class="btn btn-outline-primary" title="분석한 작품을 설정 목록에 저장합니다. 즉시 다운로드하지 않습니다." disabled>자동 수집 목록에 추가</button><button id="refresh_one" class="btn btn-outline-primary">이 작품 기존 파일 보완</button></div><h5 id="book_title"></h5><label class="mf-check"><input id="select_all" type="checkbox"> 받을 수 있는 회차 전체 선택</label><div class="mf-scroll"><table><thead><tr><th>선택</th><th>번호</th><th>회차</th><th>상태</th></tr></thead><tbody id="episodes"></tbody></table></div></div>
+<div class="mf-card"><label for="novel_url">작품 주소 또는 번호</label><input id="novel_url" type="text" placeholder="https://m.munpia.com/novel/detail/599040"><div class="mf-actions"><button id="analyze" class="btn btn-primary">회차 분석</button><button id="download" class="btn btn-success" disabled>선택 회차 받기</button><button id="add_auto" type="button" class="btn btn-outline-primary" title="분석한 작품을 설정 목록에 저장합니다. 즉시 다운로드하지 않습니다." disabled>자동 수집 목록에 추가</button><button id="refresh_one" class="btn btn-outline-primary">이 작품 기존 파일 보완</button></div><small>최근 작업한 작품 · 선택하면 작품 번호만 입력됩니다.</small><div id="recent_books" class="mf-actions mf-recent" aria-label="최근 작업한 작품 5개"></div><h5 id="book_title"></h5><label class="mf-check"><input id="select_all" type="checkbox"> 받을 수 있는 회차 전체 선택</label><div class="mf-scroll"><table><thead><tr><th>선택</th><th>번호</th><th>회차</th><th>상태</th></tr></thead><tbody id="episodes"></tbody></table></div></div>
 {% elif page == 'log' %}
 <div class="mf-card"><h5>작업 로그</h5><p>최근 300건 · 최신순 · 최대 1,000건 보관 · 이 버전 적용 이후 기록</p>
 <div class="mf-actions"><button id="log_refresh" type="button" class="btn btn-outline-primary">새로고침</button><label class="mf-check"><input id="log_auto" type="checkbox" checked> 자동 갱신</label><a class="btn btn-outline-primary" href="/{{ package_name }}/log">FF 원본 로그 열기</a></div>
@@ -128,6 +178,15 @@ function renderAnalysis(a){
  a.episodes.forEach(function(ep){var row=document.createElement('tr'),box=document.createElement('input');box.type='checkbox';box.value=ep.id;box.className='mf-episode';box.disabled=!ep.free||ep.have;box.checked=!box.disabled;cell(row,'').appendChild(box);cell(row,ep.no);cell(row,ep.title);cell(row,ep.have?'받음':ep.free?'무료':'유료/제한');el('episodes').appendChild(row);});
  el('select_all').checked=true;el('download').disabled=false;el('add_auto').disabled=false;
 }
+var recentKey='';
+async function recentBooks(){
+ if(!el('recent_books'))return;
+ var d=await post('recent_books'),key=JSON.stringify(d.rows);if(key===recentKey)return;recentKey=key;
+ var list=el('recent_books');list.replaceChildren();
+ if(!d.rows.length){list.textContent='최근 작업한 작품이 없습니다.';return;}
+ d.rows.forEach(function(book){var button=document.createElement('button');button.type='button';button.textContent=book.id+' - '+book.title;button.addEventListener('click',function(){el('novel_url').value=book.id;el('novel_url').focus();});list.appendChild(button);});
+}
+var recentState='';
 async function poll(){
  try{var data=await post('status'),s=data.state,busy=s.status==='running';
  el('state').textContent=s.message||s.status;el('state').title=s.message||s.status;el('counts').textContent='완료 '+(s.completed||0)+' · 건너뜀 '+(s.skipped||0)+' · 실패 '+(s.failed||0)+' · 이미지 경고 '+(s.warnings||0)+' | 현재 작품 '+(s.done||0)+' / '+(s.total||0);
@@ -135,6 +194,7 @@ async function poll(){
  el('schedule').textContent='자동 수집: '+(s.scheduler_enabled?'사용 중':'꺼짐');
  el('last_error').textContent=[s.last_error,s.last_warning].filter(Boolean).join(' / ');
  if(el('download'))el('download').disabled=busy||!novelId;
+ if(page==='manual'){var rk=[s.started,s.status,s.message].join('|');if(rk!==recentState){await recentBooks();recentState=rk;}}
  if(s.analysis&&s.started!==lastAnalysis){lastAnalysis=s.started;renderAnalysis(s.analysis);}
  }catch(e){message(e.message,true);}finally{timer=setTimeout(poll,2000);}
 }
