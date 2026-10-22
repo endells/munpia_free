@@ -71,6 +71,22 @@ class Tests(unittest.TestCase):
             with self.assertRaises((c.MunpiaError, ValueError)):
                 c.parse_id(value)
 
+    def test_cursor_total_sentinel_preserves_first_page_count(self):
+        chapters = [{'id': i, 'novelId': 1, 'num': i, 'free': True} for i in range(1, 452)]
+        def transport(path, params):
+            offset = int(params.get('lastNovelEntryChapterId', 0))
+            items = chapters[offset:offset + 100]
+            return payload({'list': items, 'total': 451 if offset == 0 else -1,
+                            'next': offset + 100 < len(chapters)})
+        client = c.Client(transport=transport)
+        self.assertEqual(len(client.chapters('1')), 451)
+        def incomplete(path, params):
+            if not params.get('lastNovelEntryChapterId'):
+                return payload({'list': chapters[:100], 'total': 451, 'next': True})
+            return payload({'list': chapters[100:150], 'total': -1, 'next': False})
+        with self.assertRaisesRegex(c.MunpiaError, '맞지'):
+            c.Client(transport=incomplete).chapters('1')
+
     def test_cursor_pagination_and_stall(self):
         def transport(path, params):
             if not params.get('lastNovelEntryChapterId'):
@@ -321,5 +337,6 @@ class Tests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 
 

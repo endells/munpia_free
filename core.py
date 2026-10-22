@@ -344,8 +344,12 @@ class Client:
         path = '/api/v1/mobile/novel-detail/%s/chapters' % parse_id(nid)
         params = {'order': 'ENTRY_FIRST', 'bookmark': 'false'}
         found, seen, cursors = [], set(), set()
+        expected_total = None
         for _ in range(1000):
             d = self.get(path, params)
+            total = d.get('total')
+            if total is not None and int(total) >= 0 and expected_total is None:
+                expected_total = int(total)
             items = d.get('list')
             if not isinstance(items, list):
                 raise MunpiaError('회차 목록 형식이 변경되었습니다.')
@@ -357,7 +361,7 @@ class Client:
                     seen.add(eid)
                     found.append(item)
             if not d.get('next'):
-                if 'total' in d and len(found) != int(d['total']):
+                if expected_total is not None and len(found) != expected_total:
                     raise MunpiaError('전체 회차 수가 맞지 않습니다. 목록을 다시 분석하세요.')
                 return found
             if not items:
