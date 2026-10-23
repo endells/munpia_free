@@ -136,12 +136,18 @@ def cache_path(folder, eid):
 
 
 def load_cache(folder, row):
-    try:
-        data = json.loads(cache_path(folder, row['entry_id']).read_text(encoding='utf-8'))
-        if data.get('version') == 1 and data.get('txt_sha256') == row['sha256']:
-            return data
-    except (OSError, ValueError, TypeError):
-        pass
+    # Both versions use the same schema. Accept a sibling cache only if it matches the TXT.
+    for namespace in ('munpia_free', 'munpia_gold'):
+        try:
+            eid = str(row['entry_id'])
+            if not eid.isdigit():
+                return None
+            path = safe_path(folder, '.' + namespace + '/entries/' + eid + '.json')
+            data = json.loads(path.read_text(encoding='utf-8'))
+            if data.get('version') == 1 and data.get('txt_sha256') == row['sha256']:
+                return data
+        except (OSError, ValueError, TypeError):
+            pass
     return None
 
 
@@ -337,3 +343,4 @@ def build_epub(folder, novel, records, output_name, check, warn, line_height=1.8
         if os.path.exists(temp):
             os.unlink(temp)
     return str(out)
+

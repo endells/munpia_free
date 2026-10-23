@@ -9,6 +9,7 @@ from framework import F, Job
 from plugin import PluginModuleBase
 
 from .core import Client, Engine, MunpiaError, atomic_write, normalize_cookie, parse_id, title_ids
+from .shared_settings import publish_settings
 from .telegram_feed import TelegramFeed
 from .notifications import ActivityLog, DiscordNotifier
 
@@ -134,7 +135,9 @@ class ModuleBasic(PluginModuleBase):
         raw = {k: self.P.ModelSetting.get(k) or v for k, v in self.db_default.items()}
         if not raw['download_path']:
             raw['download_path'] = os.path.join(F.config['path_data'], 'downloads', 'munpia_free')
-        return self.validate(raw)
+        conf = self.validate(raw)
+        publish_settings(F.config['path_data'], conf, atomic_write)
+        return conf
 
     def cookie_path(self):
         return Path(F.config['path_data']) / 'db' / 'munpia_free_cookie.txt'
@@ -314,6 +317,7 @@ class ModuleBasic(PluginModuleBase):
                             if latest != title_ids(raw['titles_base']):
                                 raise MunpiaError('자동 수집 목록이 다른 작업에서 변경되었습니다. 새로고침 후 설정을 저장하세요.')
                         self.P.ModelSetting.set(key, str(value))
+                publish_settings(F.config['path_data'], conf, atomic_write)
                 self.sync_schedule(conf, previous_interval)
                 return jsonify(ret='success', msg='설정을 저장했습니다.', cookie_saved=self.cookie_path().is_file())
             if command == 'analyze':

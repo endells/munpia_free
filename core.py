@@ -412,6 +412,31 @@ class History:
                 updated TEXT, PRIMARY KEY(novel_id,entry_id))''')
             db.execute('CREATE TABLE IF NOT EXISTS recent_books (position INTEGER PRIMARY KEY AUTOINCREMENT, novel_id TEXT UNIQUE, title TEXT)')
 
+    def sync_peer(self, nid, root):
+        """Adopt only intact files from the sibling plugin in this download root."""
+        own = Path(self.path)
+        if own.name != 'munpia_free_history.db':
+            return
+        peer = own.with_name('munpia_gold_history.db')
+        if not peer.is_file():
+            return
+        with sqlite3.connect(peer.resolve().as_uri() + '?mode=ro', uri=True, timeout=10) as source:
+            source.row_factory = sqlite3.Row
+            rows = [dict(row) for row in source.execute(
+                "SELECT * FROM entries WHERE novel_id=? AND status='completed'", (str(nid),))]
+        with self.connect() as db:
+            for row in rows:
+                if not valid_record(row, root):
+                    continue
+                current = db.execute('SELECT * FROM entries WHERE novel_id=? AND entry_id=?',
+                                     (row['novel_id'], row['entry_id'])).fetchone()
+                if current and current['status'] == 'completed' and valid_record(dict(current), root):
+                    continue
+                keys = ('novel_id', 'entry_id', 'title', 'episode_title', 'seq', 'status',
+                        'path', 'sha256', 'error', 'updated')
+                db.execute('INSERT OR REPLACE INTO entries VALUES(?,?,?,?,?,?,?,?,?,?)',
+                           tuple(row[key] for key in keys))
+
     def remember_book(self, nid, title):
         with self.connect() as db:
             db.execute('INSERT OR REPLACE INTO recent_books(novel_id,title) VALUES(?,?)', (str(nid), str(title)))
@@ -497,7 +522,9 @@ def build_epub(folder, novel, records, stop=None, warn=None, line_height=1.8, pa
 class Engine:
     def __init__(self, db_path, client_factory=Client):
         self.history = History(db_path)
-        self.lock_path = str(db_path) + '.lock'
+        self.lock_path = (str(Path(db_path).with_name('munpia_shared_download.lock'))
+                          if Path(db_path).name in ('munpia_free_history.db', 'munpia_gold_history.db')
+                          else str(db_path) + '.lock')
         self.client_factory = client_factory
         self.stop = threading.Event()
         self.guard = threading.Lock()
@@ -568,7 +595,7 @@ class Engine:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:
                 handle.close()
-                raise MunpiaError('다른 FF 프로세스에서 작업 중입니다.')
+                raise MunpiaError('다른 문피아 작업(무료판·유료판 포함)이 진행 중입니다. 완료 후 다시 실행하세요.')
             self.stop.clear()
             self.state = {'status': 'running', 'kind': kind, 'message': '시작 중', 'completed': 0,
                           'failed': 0, 'skipped': 0, 'warnings': 0, 'done': 0, 'total': 0, 'started': now(), 'cancel_requested': False}
@@ -595,6 +622,7 @@ class Engine:
                 self.update(message='작품 %s 목록을 확인합니다.' % nid)
                 novel = client.detail(nid)
                 self.history.remember_book(nid, novel['title'])
+                self.history.sync_peer(nid, root)
                 chapters = client.chapters(nid)
                 # Only prune saved-list downloads after a complete, successful listing.
                 remove_paid = config.get('remove_paid_title')
@@ -637,7 +665,8 @@ class Engine:
                 if wanted is None:
                     candidates = candidates[:int(config['max_per_title'])]
                 self.update(total=len(candidates), done=0, current_title=novel['title'], skipped=skipped)
-                folder = root / ('%s [%s]' % (safe_name(novel['title']), nid))
+                folder = (Path(records[0]['path']).parent if records else
+                          root / ('%s [%s]' % (safe_name(novel['title']), nid)))
                 # Only plugin-created names are used; guard against symlink escapes too.
                 folder.resolve().relative_to(root)
                 folder.mkdir(parents=True, exist_ok=True)
