@@ -437,6 +437,49 @@ class History:
                 db.execute('INSERT OR REPLACE INTO entries VALUES(?,?,?,?,?,?,?,?,?,?)',
                            tuple(row[key] for key in keys))
 
+    def clean_filenames(self, nid, root, check, warn):
+        """Remove only the recorded legacy ID suffix; preserve bytes and peer history."""
+        renamed = 0
+        for row in self.rows(nid=nid):
+            check()
+            source = Path(row['path'])
+            suffix = ' [%s].txt' % row['entry_id']
+            if (source.is_symlink() or not source.name.endswith(suffix)
+                    or not re.match(r'^\d+_', source.name) or not valid_record(row, root)):
+                continue
+            target = source.with_name(source.name[:-len(suffix)] + '.txt')
+            linked = False
+            try:
+                target.resolve().relative_to(Path(root).resolve())
+                # Hard-link creation is exclusive: even a racing file cannot be overwritten.
+                os.link(source, target)
+                linked = True
+                with self.connect() as db:
+                    schemas = ['main']
+                    own = Path(self.path)
+                    peer = own.with_name('munpia_gold_history.db')
+                    if own.name == 'munpia_free_history.db' and peer.is_file():
+                        db.execute('ATTACH DATABASE ? AS peer', (str(peer),))
+                        schemas.append('peer')
+                    for schema in schemas:
+                        db.execute(
+                            "UPDATE " + schema + ".entries SET path=?, updated=? "
+                            "WHERE novel_id=? AND entry_id=? AND path=? AND sha256=? AND status='completed'",
+                            (str(target), now(), row['novel_id'], row['entry_id'],
+                             str(source), row['sha256']))
+            except Exception as exc:
+                if linked:
+                    target.unlink()
+                warn('파일명 정리 건너뜀: %s (%s)' % (source.name, exc))
+                continue
+            # History commits before removing the old name, so interruptions preserve the data.
+            try:
+                source.unlink()
+            except OSError as exc:
+                warn('새 파일명은 적용됐지만 이전 이름 정리에 실패했습니다: %s (%s)' % (source.name, exc))
+            renamed += 1
+        return renamed
+
     def remember_book(self, nid, title):
         with self.connect() as db:
             db.execute('INSERT OR REPLACE INTO recent_books(novel_id,title) VALUES(?,?)', (str(nid), str(title)))
@@ -623,6 +666,9 @@ class Engine:
                 novel = client.detail(nid)
                 self.history.remember_book(nid, novel['title'])
                 self.history.sync_peer(nid, root)
+                if kind == 'refresh':
+                    renamed = self.history.clean_filenames(nid, root, client.check, self.warn)
+                    self.update(renamed=self.snapshot().get('renamed', 0) + renamed)
                 chapters = client.chapters(nid)
                 # Only prune saved-list downloads after a complete, successful listing.
                 remove_paid = config.get('remove_paid_title')
@@ -724,7 +770,10 @@ class Engine:
             if login_required:
                 self.update(status='auth_required', message='로그인이 필요해 중단했습니다. 쿠키 저장·로그인 확인 후 다시 실행하세요. 완료된 회차는 유지됩니다.', finished=now())
             else:
-                self.update(status='completed', message='완료 (실패/이미지 경고를 확인하세요)' if failed or self.snapshot().get('warnings') else '완료', finished=now())
+                message = '완료 (실패/경고를 확인하세요)' if failed or self.snapshot().get('warnings') else '완료'
+                if kind == 'refresh':
+                    message += ' · 파일명 정리 %s개' % self.snapshot().get('renamed', 0)
+                self.update(status='completed', message=message, finished=now())
         except Stopped:
             self.update(status='canceled', message='중지했습니다. 완료된 파일은 보존됩니다.', finished=now())
         except Exception as exc:
