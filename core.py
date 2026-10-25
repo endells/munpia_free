@@ -684,9 +684,13 @@ class Engine:
                             entry, _ = client.entry(nid, item['id'])
                         data = publication.save_episode(target_folder, item, entry, config['include_author_comment'],
                                                         client.image, atomic_write, client.check, self.warn, previous)
-                        filename = '%0*d_%s [%s].txt' % (int(config.get('episode_digits', 5)), int(item.get('num') or 0), safe_name(item.get('title', '')), item['id'])
+                        filename = '%0*d_%s.txt' % (int(config.get('episode_digits', 5)), int(item.get('num') or 0), safe_name(item.get('title', '')))
                         path = Path(existing['path']) if existing else folder / filename
                         path.resolve().relative_to(root)
+                        if not existing and path.exists() and not any(
+                                r['entry_id'] == str(item['id']) and Path(r['path']) == path
+                                for r in self.history.rows(nid=nid)):
+                            raise ValueError('같은 이름의 기존 파일을 보호하기 위해 저장을 중단했습니다: ' + path.name)
                         client.check()
                         atomic_write(path, data)
                         self.history.record(nid, item, novel['title'], 'completed', path, hashlib.sha256(data).hexdigest())

@@ -56,13 +56,13 @@ class SharedFilesTests(unittest.TestCase):
             peer.record('1', {'id': 10, 'num': 1, 'title': 'one'}, 'Old title', 'completed',
                         path, hashlib.sha256(path.read_bytes()).hexdigest())
             called = []
+            chapters = [{'id': 10, 'num': 1, 'title': 'one', 'free': True},
+                        {'id': 20, 'num': 2, 'title': 'two', 'free': True}]
             def transport(url, params):
                 if url.endswith('my-info-simple'):
                     return {'login': True}
                 if url.endswith('/chapters'):
-                    data = {'total': 2, 'next': False, 'list': [
-                        {'id': 10, 'num': 1, 'title': 'one', 'free': True},
-                        {'id': 20, 'num': 2, 'title': 'two', 'free': True}]}
+                    data = {'total': len(chapters), 'next': False, 'list': chapters}
                 elif '/entries/' in url:
                     called.append(url.rsplit('/', 1)[-1])
                     data = {'entry': {'id': 20, 'content': 'synthetic new'}}
@@ -72,7 +72,8 @@ class SharedFilesTests(unittest.TestCase):
             engine = c.Engine(base / 'munpia_free_history.db',
                               client_factory=lambda **kw: c.Client(transport=transport, **kw))
             conf = {'cookie': 'test=synthetic', 'download_path': str(root), 'request_delay': 1,
-                    'max_per_title': 10, 'make_epub': True, 'include_author_comment': False}
+                    'max_per_title': 10, 'make_epub': True, 'include_author_comment': False,
+                    'episode_digits': 4}
             engine.start('download', ['1'], conf)
             engine.thread.join(5)
             self.assertFalse(engine.thread.is_alive())
@@ -81,6 +82,22 @@ class SharedFilesTests(unittest.TestCase):
             self.assertEqual(len(engine.history.rows(nid='1')), 2)
             self.assertTrue(all(Path(row['path']).parent == folder for row in engine.history.rows(nid='1')))
             self.assertTrue(list(folder.glob('*.epub')))
+            self.assertTrue((folder / '0002_two.txt').is_file())
+            self.assertFalse((folder / '0002_two [20].txt').exists())
+            self.assertTrue(path.is_file())  # Legacy names remain recognized.
+            called.clear()
+            engine.start('download', ['1'], conf)
+            engine.thread.join(5)
+            self.assertFalse(engine.thread.is_alive())
+            self.assertEqual(called, [])
+            self.assertEqual(engine.snapshot()['skipped'], 2)
+            original = (folder / '0002_two.txt').read_bytes()
+            chapters.append({'id': 30, 'num': 2, 'title': 'two', 'free': True})
+            engine.start('download', ['1'], conf)
+            engine.thread.join(5)
+            self.assertFalse(engine.thread.is_alive())
+            self.assertEqual(engine.snapshot()['failed'], 1)
+            self.assertEqual((folder / '0002_two.txt').read_bytes(), original)
             other = c.Engine(base / 'munpia_gold_history.db')
             self.assertEqual(engine.lock_path, other.lock_path)
 
