@@ -437,6 +437,58 @@ class History:
                 db.execute('INSERT OR REPLACE INTO entries VALUES(?,?,?,?,?,?,?,?,?,?)',
                            tuple(row[key] for key in keys))
 
+    def rename_book_folder(self, nid, title, root, warn):
+        """Move a unique ID-labelled book folder and update both history databases."""
+        root = Path(root).resolve()
+        if not str(nid).isdigit() or not root.is_dir():
+            return False
+        suffix = ' [%s]' % nid
+        folders = [p for p in root.iterdir()
+                   if p.name.endswith(suffix) and p.is_dir() and not p.is_symlink()]
+        target = root / (safe_name(title) + suffix)
+        if not folders:
+            return False
+        if len(folders) != 1:
+            warn('작품 %s 폴더가 여러 개여서 자동 이름 변경을 건너뜁니다.' % nid)
+            return False
+        source = folders[0]
+        if source == target:
+            return False
+        if os.path.lexists(target):
+            warn('같은 이름의 폴더가 있어 변경을 건너뜁니다: ' + target.name)
+            return False
+        moved = False
+        try:
+            with self.connect() as db:
+                schemas = ['main']
+                own = Path(self.path)
+                peer = own.with_name('munpia_gold_history.db')
+                if own.name == 'munpia_free_history.db' and peer.is_file():
+                    db.execute('ATTACH DATABASE ? AS peer', (str(peer),))
+                    schemas.append('peer')
+                db.execute('BEGIN IMMEDIATE')
+                source.rename(target)
+                moved = True
+                for schema in schemas:
+                    rows = db.execute('SELECT entry_id,path FROM ' + schema +
+                                      '.entries WHERE novel_id=?', (str(nid),)).fetchall()
+                    for row in rows:
+                        if not row['path']:
+                            continue
+                        try:
+                            relative = Path(row['path']).relative_to(source)
+                        except ValueError:
+                            continue
+                        db.execute('UPDATE ' + schema + '.entries SET path=?,title=?,updated=? '
+                                   'WHERE novel_id=? AND entry_id=?',
+                                   (str(target / relative), title, now(), str(nid), row['entry_id']))
+            return True
+        except Exception as exc:
+            if moved:
+                target.rename(source)
+            warn('작품 %s 폴더 이름 변경 실패: %s' % (nid, exc))
+            return False
+
     def clean_filenames(self, nid, root, check, warn):
         """Remove only the recorded legacy ID suffix; preserve bytes and peer history."""
         renamed = 0
@@ -659,17 +711,47 @@ class Engine:
             if not root.is_absolute():
                 raise MunpiaError('다운로드 경로는 컨테이너 안의 절대 경로여야 합니다.')
             root = root.resolve()
+            # Local maintenance must finish even when login/detail requests fail.
+            if kind == 'refresh':
+                def check_local():
+                    if self.stop.is_set():
+                        raise Stopped()
+                for nid in ids:
+                    check_local()
+                    self.update(message='작품 %s 기존 파일명을 정리합니다.' % nid)
+                    self.history.sync_peer(nid, root)
+                    renamed = self.history.clean_filenames(nid, root, check_local, self.warn)
+                    self.update(renamed=self.snapshot().get('renamed', 0) + renamed)
             client = self.client_factory(stop=self.stop, delay=config['request_delay'], cookie=config.get('cookie', ''))
             for nid in ids:
                 client.check()
                 self.update(message='작품 %s 목록을 확인합니다.' % nid)
-                novel = client.detail(nid)
+                try:
+                    novel = client.detail(nid)
+                except LoginRequired:
+                    raise
+                except MunpiaError as exc:
+                    if kind != 'refresh':
+                        raise
+                    failed += 1
+                    self.warn('작품 %s 정보 조회 실패: %s' % (nid, exc))
+                    self.update(failed=failed, last_error=str(exc))
+                    continue
+                if self.history.rename_book_folder(nid, novel['title'], root, self.warn):
+                    self.update(renamed_folders=self.snapshot().get('renamed_folders', 0) + 1)
                 self.history.remember_book(nid, novel['title'])
                 self.history.sync_peer(nid, root)
-                if kind == 'refresh':
-                    renamed = self.history.clean_filenames(nid, root, client.check, self.warn)
-                    self.update(renamed=self.snapshot().get('renamed', 0) + renamed)
-                chapters = client.chapters(nid)
+                try:
+                    chapters = client.chapters(nid)
+                except LoginRequired:
+                    raise
+                except MunpiaError as exc:
+                    if kind != 'refresh':
+                        raise
+                    failed += 1
+                    self.warn('작품 %s 회차 조회 실패: %s' % (nid, exc))
+                    self.update(failed=failed, last_error=str(exc))
+                    continue
                 # Only prune saved-list downloads after a complete, successful listing.
                 remove_paid = config.get('remove_paid_title')
                 if (kind == 'download' and selected is None and callable(remove_paid)
@@ -780,6 +862,11 @@ class Engine:
             self.update(status='failed', message=str(exc), finished=now())
         finally:
             try:
+                state = self.snapshot()
+                if kind == 'refresh' and '파일명 정리' not in state.get('message', ''):
+                    self.update(message=state.get('message', '') + ' · 파일명 정리 %s개' % state.get('renamed', 0))
+                if state.get('renamed_folders'):
+                    self.update(message=self.snapshot().get('message', '') + ' · 폴더명 변경 %s개' % state['renamed_folders'])
                 callback = config.get('on_finished')
                 if kind != 'analyze' and callable(callback):
                     callback({'state': self.snapshot(), 'downloads': downloads,

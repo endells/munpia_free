@@ -79,6 +79,10 @@ class SharedFilesTests(unittest.TestCase):
             self.assertFalse(engine.thread.is_alive())
             self.assertEqual(engine.snapshot()['status'], 'completed')
             self.assertEqual(called, ['20'])
+            self.assertFalse(folder.exists())
+            folder = root / 'New title [1]'
+            path = folder / path.name
+            self.assertEqual(engine.snapshot()['renamed_folders'], 1)
             self.assertEqual(len(engine.history.rows(nid='1')), 2)
             self.assertTrue(all(Path(row['path']).parent == folder for row in engine.history.rows(nid='1')))
             self.assertTrue(list(folder.glob('*.epub')))

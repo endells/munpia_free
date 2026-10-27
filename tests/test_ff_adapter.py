@@ -155,6 +155,15 @@ class AdapterTests(unittest.TestCase):
             self.values.clear()
             self.values.update(previous)
 
+
+    def test_display_version_matches_plugin_metadata(self):
+        version = next(line.split(':', 1)[1].strip()
+                       for line in (Path(__file__).parents[1] / 'info.yaml').read_text().splitlines()
+                       if line.startswith('version:'))
+        for page in ('setting', 'manual', 'status'):
+            html = self.client.get('/munpia_free/basic/' + page).get_data(as_text=True)
+            self.assertIn('class="mf-version">v' + version + '</small>', html)
+
     def test_four_templates_render(self):
         for page in ['setting','integration','cookie','manual','status','history','log']:
             r = self.client.get('/munpia_free/basic/'+page)

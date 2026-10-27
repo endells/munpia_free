@@ -198,7 +198,10 @@ class ModuleBasic(PluginModuleBase):
         token_key = 'munpia_free_csrf'
         if token_key not in session:
             session[token_key] = secrets.token_urlsafe(32)
-        return render_template('munpia_free_basic.html', page=page,
+        version = next(line.partition(':')[2].strip().strip("'\"")
+                       for line in Path(__file__).with_name('info.yaml').read_text(encoding='utf-8').splitlines()
+                       if line.startswith('version:'))
+        return render_template('munpia_free_basic.html', page=page, version=version,
                                package_name=self.P.package_name, config=self.config(),
                                csrf_token=session[token_key], cookie_saved=self.cookie_path().is_file())
 
