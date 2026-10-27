@@ -29,6 +29,10 @@ class Stopped(MunpiaError):
     pass
 
 
+class NovelUnavailable(MunpiaError):
+    pass
+
+
 class LoginRequired(MunpiaError):
     pass
 
@@ -121,6 +125,8 @@ def cookie_header(normalized, request_path):
 def response_error(payload, http_status=None):
     code = payload.get('code') if isinstance(payload, dict) else None
     code = code if isinstance(code, str) and re.fullmatch(r'[A-Z][0-9]{3}_[0-9]{5}', code) else '?'
+    if code == 'A002_12002':
+        return NovelUnavailable('작품이 없거나 비공개 상태입니다. (A002_12002)')
     if code in ('A001_11004', 'A002_21006'):
         return LoginRequired('문피아 로그인이 필요하거나 쿠키가 만료되었습니다. 설정에서 쿠키를 저장하고 로그인 확인 후 다시 실행하세요. (' + code + ')')
     suffix = ' HTTP %s' % http_status if http_status is not None else ''
@@ -719,136 +725,167 @@ class Engine:
                 for nid in ids:
                     check_local()
                     self.update(message='작품 %s 기존 파일명을 정리합니다.' % nid)
-                    self.history.sync_peer(nid, root)
-                    renamed = self.history.clean_filenames(nid, root, check_local, self.warn)
-                    self.update(renamed=self.snapshot().get('renamed', 0) + renamed)
-            client = self.client_factory(stop=self.stop, delay=config['request_delay'], cookie=config.get('cookie', ''))
-            for nid in ids:
-                client.check()
-                self.update(message='작품 %s 목록을 확인합니다.' % nid)
-                try:
-                    novel = client.detail(nid)
-                except LoginRequired:
-                    raise
-                except MunpiaError as exc:
-                    if kind != 'refresh':
-                        raise
-                    failed += 1
-                    self.warn('작품 %s 정보 조회 실패: %s' % (nid, exc))
-                    self.update(failed=failed, last_error=str(exc))
-                    continue
-                if self.history.rename_book_folder(nid, novel['title'], root, self.warn):
-                    self.update(renamed_folders=self.snapshot().get('renamed_folders', 0) + 1)
-                self.history.remember_book(nid, novel['title'])
-                self.history.sync_peer(nid, root)
-                try:
-                    chapters = client.chapters(nid)
-                except LoginRequired:
-                    raise
-                except MunpiaError as exc:
-                    if kind != 'refresh':
-                        raise
-                    failed += 1
-                    self.warn('작품 %s 회차 조회 실패: %s' % (nid, exc))
-                    self.update(failed=failed, last_error=str(exc))
-                    continue
-                # Only prune saved-list downloads after a complete, successful listing.
-                remove_paid = config.get('remove_paid_title')
-                if (kind == 'download' and selected is None and callable(remove_paid)
-                        and any(item.get('free') is False for item in chapters)):
-                    client.check()
-                    remove_paid(nid)
-                    removed = self.snapshot().get('removed_titles', [])
-                    removed.append({'id': str(nid), 'title': novel['title']})
-                    self.update(removed_titles=removed)
-                    self.warn('유료 전환 작품을 자동 수집 목록에서 제거했습니다: %s (%s). 기존 파일은 유지됩니다.' % (novel['title'], nid))
-                    continue
-                if kind == 'analyze':
-                    episodes = [{'id': str(c['id']), 'no': c.get('num'), 'title': c.get('title', ''),
-                                 'free': c.get('free') is True, 'have': self.history.complete(nid, c['id'], root)} for c in chapters]
-                    self.update(analysis={'novel_id': nid, 'title': novel['title'], 'episodes': episodes})
-                    continue
-                # Resolve selection against a freshly fetched list. Never trust browser free flags.
-                wanted = set(map(str, selected)) if selected is not None else None
-                if wanted is not None and not wanted.issubset({str(c['id']) for c in chapters}):
-                    raise MunpiaError('선택 회차가 현재 목록에 없습니다. 다시 분석하세요.')
-                records = [r for r in self.history.rows(nid=nid) if valid_record(r, root)]
-                self.upgrade_headings(records, client)
-                completed_rows = {r['entry_id']: r for r in records}
-                candidates = []
-                for item in chapters:
-                    if wanted is not None and str(item['id']) not in wanted:
-                        continue
-                    if item.get('free') is not True:
-                        skipped += 1
-                        continue
-                    existing = completed_rows.get(str(item['id']))
-                    if kind == 'refresh' and not existing:
-                        continue
-                    if existing and (kind != 'refresh' or publication.media_complete(Path(existing['path']).parent, existing)):
-                        skipped += 1
-                        continue
-                    candidates.append(item)
-                # Explicit manual selection is not capped by the automatic batch size.
-                if wanted is None:
-                    candidates = candidates[:int(config['max_per_title'])]
-                self.update(total=len(candidates), done=0, current_title=novel['title'], skipped=skipped)
-                folder = (Path(records[0]['path']).parent if records else
-                          root / ('%s [%s]' % (safe_name(novel['title']), nid)))
-                # Only plugin-created names are used; guard against symlink escapes too.
-                folder.resolve().relative_to(root)
-                folder.mkdir(parents=True, exist_ok=True)
-                self.prepare_book(folder, novel, client)
-                for index, item in enumerate(candidates):
-                    client.check()
-                    self.update(message='받는 중: ' + item.get('title', ''), current_episode=item.get('title', ''))
-                    existing = completed_rows.get(str(item['id']))
                     try:
-                        target_folder = Path(existing['path']).parent if existing else folder
-                        previous = publication.load_cache(target_folder, existing) if existing else None
-                        if previous and previous.get('source'):
-                            entry = previous['source']
-                        else:
-                            entry, _ = client.entry(nid, item['id'])
-                        data = publication.save_episode(target_folder, item, entry, config['include_author_comment'],
-                                                        client.image, atomic_write, client.check, self.warn, previous)
-                        filename = '%0*d_%s.txt' % (int(config.get('episode_digits', 5)), int(item.get('num') or 0), safe_name(item.get('title', '')))
-                        path = Path(existing['path']) if existing else folder / filename
-                        path.resolve().relative_to(root)
-                        if not existing and path.exists() and not any(
-                                r['entry_id'] == str(item['id']) and Path(r['path']) == path
-                                for r in self.history.rows(nid=nid)):
-                            raise ValueError('같은 이름의 기존 파일을 보호하기 위해 저장을 중단했습니다: ' + path.name)
-                        client.check()
-                        atomic_write(path, data)
-                        self.history.record(nid, item, novel['title'], 'completed', path, hashlib.sha256(data).hexdigest())
-                        completed += 1
-                        downloads.append({'novel_id': str(nid), 'title': novel['title'],
-                                          'no': item.get('num') or 0, 'episode_title': item.get('title', '')})
+                        self.history.sync_peer(nid, root)
+                        renamed = self.history.clean_filenames(nid, root, check_local, self.warn)
+                        self.update(renamed=self.snapshot().get('renamed', 0) + renamed)
                     except Stopped:
                         raise
-                    except LoginRequired as exc:
-                        failed += 1
-                        login_required = True
-                        if not existing:
-                            self.history.record(nid, item, novel['title'], 'failed', error=str(exc))
-                        self.update(last_error=str(exc))
                     except Exception as exc:
                         failed += 1
-                        if not existing:
-                            self.history.record(nid, item, novel['title'], 'failed', error=str(exc))
-                        self.update(last_error=str(exc))
-                    self.update(done=index + 1, completed=completed, failed=failed, skipped=skipped)
+                        self.update(failed=failed, last_error=str(exc))
+                        self.warn('작품 %s 파일명 정리 실패: %s' % (nid, exc))
+            client = self.client_factory(stop=self.stop, delay=config['request_delay'], cookie=config.get('cookie', ''))
+            for nid in ids:
+                try:
+                    client.check()
+                    self.update(message='작품 %s 목록을 확인합니다.' % nid)
+                    try:
+                        novel = client.detail(nid)
+                    except LoginRequired:
+                        raise
+                    except NovelUnavailable as exc:
+                        remove = config.get('remove_unavailable_title')
+                        if kind != 'analyze' and selected is None and callable(remove):
+                            client.check()
+                            remove(nid)
+                            removed = self.snapshot().get('removed_titles', [])
+                            removed.append({'id': str(nid), 'title': str(nid)})
+                            self.update(removed_titles=removed)
+                        if kind == 'analyze':
+                            raise
+                        skipped += 1
+                        self.update(skipped=skipped)
+                        self.warn('작품 %s: %s 자동 수집 목록에서 제외합니다. 기존 파일은 보존합니다.' % (nid, exc))
+                        continue
+                    except MunpiaError as exc:
+                        if kind != 'refresh':
+                            raise
+                        failed += 1
+                        self.warn('작품 %s 정보 조회 실패: %s' % (nid, exc))
+                        self.update(failed=failed, last_error=str(exc))
+                        continue
+                    if self.history.rename_book_folder(nid, novel['title'], root, self.warn):
+                        self.update(renamed_folders=self.snapshot().get('renamed_folders', 0) + 1)
+                    self.history.remember_book(nid, novel['title'])
+                    self.history.sync_peer(nid, root)
+                    try:
+                        chapters = client.chapters(nid)
+                    except LoginRequired:
+                        raise
+                    except MunpiaError as exc:
+                        if kind != 'refresh':
+                            raise
+                        failed += 1
+                        self.warn('작품 %s 회차 조회 실패: %s' % (nid, exc))
+                        self.update(failed=failed, last_error=str(exc))
+                        continue
+                    # Only prune saved-list downloads after a complete, successful listing.
+                    remove_paid = config.get('remove_paid_title')
+                    if (kind == 'download' and selected is None and callable(remove_paid)
+                            and any(item.get('free') is False for item in chapters)):
+                        client.check()
+                        remove_paid(nid)
+                        removed = self.snapshot().get('removed_titles', [])
+                        removed.append({'id': str(nid), 'title': novel['title']})
+                        self.update(removed_titles=removed)
+                        self.warn('유료 전환 작품을 자동 수집 목록에서 제거했습니다: %s (%s). 기존 파일은 유지됩니다.' % (novel['title'], nid))
+                        continue
+                    if kind == 'analyze':
+                        episodes = [{'id': str(c['id']), 'no': c.get('num'), 'title': c.get('title', ''),
+                                     'free': c.get('free') is True, 'have': self.history.complete(nid, c['id'], root)} for c in chapters]
+                        self.update(analysis={'novel_id': nid, 'title': novel['title'], 'episodes': episodes})
+                        continue
+                    # Resolve selection against a freshly fetched list. Never trust browser free flags.
+                    wanted = set(map(str, selected)) if selected is not None else None
+                    if wanted is not None and not wanted.issubset({str(c['id']) for c in chapters}):
+                        raise MunpiaError('선택 회차가 현재 목록에 없습니다. 다시 분석하세요.')
+                    records = [r for r in self.history.rows(nid=nid) if valid_record(r, root)]
+                    self.upgrade_headings(records, client)
+                    completed_rows = {r['entry_id']: r for r in records}
+                    candidates = []
+                    for item in chapters:
+                        if wanted is not None and str(item['id']) not in wanted:
+                            continue
+                        if item.get('free') is not True:
+                            skipped += 1
+                            continue
+                        existing = completed_rows.get(str(item['id']))
+                        if kind == 'refresh' and not existing:
+                            continue
+                        if existing and (kind != 'refresh' or publication.media_complete(Path(existing['path']).parent, existing)):
+                            skipped += 1
+                            continue
+                        candidates.append(item)
+                    # Explicit manual selection is not capped by the automatic batch size.
+                    if wanted is None:
+                        candidates = candidates[:int(config['max_per_title'])]
+                    self.update(total=len(candidates), done=0, current_title=novel['title'], skipped=skipped)
+                    folder = (Path(records[0]['path']).parent if records else
+                              root / ('%s [%s]' % (safe_name(novel['title']), nid)))
+                    # Only plugin-created names are used; guard against symlink escapes too.
+                    folder.resolve().relative_to(root)
+                    folder.mkdir(parents=True, exist_ok=True)
+                    self.prepare_book(folder, novel, client)
+                    for index, item in enumerate(candidates):
+                        client.check()
+                        self.update(message='받는 중: ' + item.get('title', ''), current_episode=item.get('title', ''))
+                        existing = completed_rows.get(str(item['id']))
+                        try:
+                            target_folder = Path(existing['path']).parent if existing else folder
+                            previous = publication.load_cache(target_folder, existing) if existing else None
+                            if previous and previous.get('source'):
+                                entry = previous['source']
+                            else:
+                                entry, _ = client.entry(nid, item['id'])
+                            data = publication.save_episode(target_folder, item, entry, config['include_author_comment'],
+                                                            client.image, atomic_write, client.check, self.warn, previous)
+                            filename = '%0*d_%s.txt' % (int(config.get('episode_digits', 5)), int(item.get('num') or 0), safe_name(item.get('title', '')))
+                            path = Path(existing['path']) if existing else folder / filename
+                            path.resolve().relative_to(root)
+                            if not existing and path.exists() and not any(
+                                    r['entry_id'] == str(item['id']) and Path(r['path']) == path
+                                    for r in self.history.rows(nid=nid)):
+                                raise ValueError('같은 이름의 기존 파일을 보호하기 위해 저장을 중단했습니다: ' + path.name)
+                            client.check()
+                            atomic_write(path, data)
+                            self.history.record(nid, item, novel['title'], 'completed', path, hashlib.sha256(data).hexdigest())
+                            completed += 1
+                            downloads.append({'novel_id': str(nid), 'title': novel['title'],
+                                              'no': item.get('num') or 0, 'episode_title': item.get('title', '')})
+                        except Stopped:
+                            raise
+                        except LoginRequired as exc:
+                            failed += 1
+                            login_required = True
+                            if not existing:
+                                self.history.record(nid, item, novel['title'], 'failed', error=str(exc))
+                            self.update(last_error=str(exc))
+                        except Exception as exc:
+                            failed += 1
+                            if not existing:
+                                self.history.record(nid, item, novel['title'], 'failed', error=str(exc))
+                            self.update(last_error=str(exc))
+                        self.update(done=index + 1, completed=completed, failed=failed, skipped=skipped)
+                        if login_required:
+                            break
+                    if config['make_epub']:
+                        client.check()
+                        self.update(message='EPUB 합본을 만듭니다.')
+                        rows = [r for r in self.history.rows(nid=nid) if valid_record(r, root)]
+                        build_epub(folder, novel, rows, self.stop, self.warn,
+                                   config.get('epub_line_height', 1.8), config.get('epub_paragraph_gap', 0.55))
                     if login_required:
                         break
-                if config['make_epub']:
-                    client.check()
-                    self.update(message='EPUB 합본을 만듭니다.')
-                    rows = [r for r in self.history.rows(nid=nid) if valid_record(r, root)]
-                    build_epub(folder, novel, rows, self.stop, self.warn,
-                               config.get('epub_line_height', 1.8), config.get('epub_paragraph_gap', 0.55))
-                if login_required:
-                    break
+                except (Stopped, LoginRequired):
+                    raise
+                except Exception as exc:
+                    if kind != 'refresh':
+                        raise
+                    failed += 1
+                    self.update(failed=failed, last_error=str(exc))
+                    self.warn('작품 %s 처리 실패, 다음 작품을 진행합니다: %s' % (nid, exc))
+                    continue
             if login_required:
                 self.update(status='auth_required', message='로그인이 필요해 중단했습니다. 쿠키 저장·로그인 확인 후 다시 실행하세요. 완료된 회차는 유지됩니다.', finished=now())
             else:

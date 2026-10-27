@@ -91,3 +91,25 @@ class BookFolderTests(unittest.TestCase):
                 self.assertFalse((folder / '0035_35화 [9025825].txt').exists())
                 self.assertTrue(history.complete(nid, 9025825, root))
 
+
+    def test_unavailable_removed_and_next_title_processed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            removed = []
+            calls = []
+            def transport(url, params):
+                if url.endswith('my-info-simple'):
+                    return {'login': True}
+                calls.append(url)
+                if '/1' in url:
+                    return {'code': 'A002_12002'}
+                raise c.MunpiaError('temporary failure')
+            engine = c.Engine(Path(tmp) / 'test.db', client_factory=lambda **kw: c.Client(transport=transport, **kw))
+            conf = dict(download_path=tmp, request_delay=1, cookie='test=value', max_per_title=1,
+                        make_epub=False, include_author_comment=False, remove_unavailable_title=removed.append)
+            engine.start('refresh', ['1', '2'], conf)
+            engine.thread.join(5)
+            self.assertFalse(engine.thread.is_alive())
+            self.assertEqual(removed, ['1'])
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(engine.snapshot()['failed'], 1)
+            self.assertEqual(engine.snapshot()['skipped'], 1)

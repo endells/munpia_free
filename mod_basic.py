@@ -152,6 +152,7 @@ class ModuleBasic(PluginModuleBase):
         conf = self.config()
         conf['cookie'] = self.read_cookie()
         conf['remove_paid_title'] = self.remove_paid_title
+        conf['remove_unavailable_title'] = self.remove_unavailable_title
         conf['on_finished'] = self.download_finished
         return conf
 
@@ -162,6 +163,13 @@ class ModuleBasic(PluginModuleBase):
             if str(nid) in current:
                 self.P.ModelSetting.set('titles', '\n'.join(x for x in current if x != str(nid)))
                 self.P.logger.info('유료 전환 작품 자동 목록 제거: %s (기존 파일 보존)', nid)
+
+    def remove_unavailable_title(self, nid):
+        with F.app.app_context(), self.settings_lock:
+            current = title_ids(self.P.ModelSetting.get('titles') or '')
+            if str(nid) in current:
+                self.P.ModelSetting.set('titles', '\n'.join(x for x in current if x != str(nid)))
+                self.P.logger.info('없거나 비공개인 작품 자동 목록 제거: %s (기존 파일 보존)', nid)
 
     @staticmethod
     def validate(raw):
