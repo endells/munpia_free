@@ -86,6 +86,76 @@ class PublicationTests(unittest.TestCase):
         self.assertIn('합성 본문', data.decode())
         self.assertIn('[삽화: 받지 못함]', data.decode())
 
+    def test_txt_references_restore_epub_without_cache_or_network(self):
+        self.run_book()
+        row = self.engine.history.rows(nid='1')[0]
+        folder = Path(row['path']).parent
+        p.cache_path(folder, row['entry_id']).unlink()
+        self.assertTrue(p.media_complete(folder, row))
+        self.entry_calls.clear(); self.image_calls.clear()
+        self.run_book('refresh')
+        self.assertEqual(self.entry_calls, [])
+        self.assertEqual(self.image_calls, [])
+        with zipfile.ZipFile(next(folder.glob('*.epub'))) as z:
+            chapter = ET.fromstring(z.read('OEBPS/ch0.xhtml'))
+            body = list(chapter.find('{*}body'))
+            self.assertEqual([n.tag.split('}')[-1] for n in body], ['h2', 'p', 'div', 'p'])
+            src = chapter.find('.//{*}img').get('src')
+            self.assertEqual(z.read('OEBPS/' + src), self.png)
+
+    def test_txt_references_reject_escapes_and_report_missing_files(self):
+        outside = self.root / 'outside.png'; outside.write_bytes(self.png)
+        folder = self.root / 'book'; folder.mkdir()
+        (folder / 'escape.png').symlink_to(outside)
+        text = '앞\n[삽화: ../outside.png]\n[삽화: escape.png]\n[삽화: missing.png]\n뒤'
+        blocks = p.txt_blocks(folder, text)
+        self.assertEqual(sum(b['type'] == 'image' for b in blocks), 3)
+        self.assertFalse(any(b.get('src') for b in blocks))
+        path = folder / '001_test.txt'; path.write_text(text)
+        row = {'entry_id': '10', 'seq': 1, 'episode_title': 'test',
+               'path': str(path), 'sha256': p.digest(path.read_bytes())}
+        warnings = []
+        p.build_epub(folder, {'id': 1, 'title': 'test'}, [row], 'test.epub', lambda: None, warnings.append)
+        self.assertEqual(len(warnings), 3)
+        self.assertIn('missing.png', warnings[-1])
+        with zipfile.ZipFile(folder / 'test.epub') as z:
+            self.assertFalse(any(n.endswith('.png') for n in z.namelist()))
+
+    def test_attachment_aliases_and_unplaced_images_are_kept(self):
+        blocks = p.body_blocks({'content': '앞\n{@PIC:one}\n뒤', 'attachments': [
+            {'id': 'one', 'url': 'https://cdn1.munpia.com/one'},
+            {'id': 'two', 'src': 'https://cdn1.munpia.com/two'}]})
+        self.assertEqual([b['type'] for b in blocks], ['text', 'image', 'text', 'image'])
+        self.assertEqual(blocks[1]['url'], 'https://cdn1.munpia.com/one')
+        self.assertTrue(blocks[-1]['unplaced'])
+        self.assertEqual(blocks[-1]['url'], 'https://cdn1.munpia.com/two')
+
+    def test_author_comment_does_not_duplicate_attachments(self):
+        blocks = p.body_blocks({'content': '본문 {@PIC:one}', 'authorComment': '후기 {@PIC:two}',
+                                'attachments': [{'id': 'one', 'url': 'https://cdn1.munpia.com/one'},
+                                                {'id': 'two', 'url': 'https://cdn1.munpia.com/two'}]}, True)
+        images = [b for b in blocks if b['type'] == 'image']
+        self.assertEqual(len(images), 2)
+        self.assertFalse(any(b.get('unplaced') for b in images))
+
+    def test_filename_with_brackets_and_webp_embeds_as_png(self):
+        buf = io.BytesIO()
+        Image.new('RGB', (4, 4), 'red').save(buf, format='WEBP')
+        relative = 'images/0001_제목 [특별편]_이미지_001.webp'
+        path = self.root / relative; path.parent.mkdir(); path.write_bytes(buf.getvalue())
+        txt = self.root / 'one.txt'
+        txt.write_text('1. 시험\n\n앞\n[삽화: %s]\n뒤\n' % relative)
+        row = {'entry_id': '10', 'seq': 1, 'episode_title': '시험',
+               'path': str(txt), 'sha256': p.digest(txt.read_bytes())}
+        warnings = []
+        p.build_epub(self.root, {'id': 1, 'title': '시험'}, [row], 'test.epub', lambda: None, warnings.append)
+        self.assertEqual(warnings, [])
+        with zipfile.ZipFile(self.root / 'test.epub') as z:
+            chapter = ET.fromstring(z.read('OEBPS/ch0.xhtml'))
+            src = chapter.find('.//{*}img').get('src')
+            self.assertTrue(src.endswith('.png'))
+            self.assertTrue(z.read('OEBPS/' + src).startswith(b'\x89PNG'))
+
     def test_cover_info_txt_and_embedded_epub(self):
         state = self.run_book()
         self.assertEqual(state['completed'],1)

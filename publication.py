@@ -98,15 +98,20 @@ class BodyParser(HTMLParser):
             self.parts.append(data)
 
 
-def body_blocks(entry, include_comment=False):
+def attachment_url(attachment):
+    return attachment.get('imageUrl') or attachment.get('url') or attachment.get('src') or ''
+
+
+def body_blocks(entry, include_comment=False, append_unplaced=True):
     content = clean(entry.get('content')).replace('\r\n', '\n').replace('\r', '\n')
     attachments = [a for a in (entry.get('attachments') or []) if isinstance(a, dict)]
     def picture(match):
         key = match.group(1).strip()
         found = next((a for a in attachments if str(a.get('id', '')) == key), None)
         if found is None:
-            found = next((a for a in attachments if key in str(a.get('id', ''))), None)
-        url, alt = (found.get('imageUrl', ''), found.get('alt') or '삽화') if found else ('', '삽화')
+            matches = [a for a in attachments if key and key in str(a.get('id', ''))]
+            found = matches[0] if len(matches) == 1 else None
+        url, alt = (attachment_url(found), found.get('alt') or '삽화') if found else ('', '삽화')
         return '<img src="%s" alt="%s" />' % (html.escape(str(url), quote=True), html.escape(clean(alt), quote=True))
     # Protect literal angle brackets in plain novel text before inserting image tags.
     is_html = re.search(r'</?(?:p|div|br|span|img|script|style|b|i|strong|em|h[1-6])(?:\s|/?>)', content, re.I)
@@ -123,16 +128,18 @@ def body_blocks(entry, include_comment=False):
             blocks.append(dict(type='image', **parser.images[int(marker.group(1))]))
         elif part.strip():
             blocks.append({'type': 'text', 'text': re.sub(r'\n{4,}', '\n\n\n', part).strip()})
-    if entry.get('_source') == 'pc':
-        used = {b.get('url') for b in blocks if b['type'] == 'image'}
+    comments = body_blocks({'content': entry['authorComment'], 'attachments': attachments},
+                           append_unplaced=False) if include_comment and entry.get('authorComment') else []
+    if attachments and append_unplaced:
+        used = {b.get('url') for b in blocks + comments if b['type'] == 'image'}
         for attachment in attachments:
-            url = attachment.get('imageUrl') or attachment.get('url') or attachment.get('src') or ''
+            url = attachment_url(attachment)
             if not url or url not in used:
                 blocks.append({'type': 'image', 'url': url, 'alt': '삽화', 'unplaced': True})
                 used.add(url)
     if include_comment and entry.get('authorComment'):
         blocks.append({'type': 'text', 'text': '[작가의 말]'})
-        blocks.extend(body_blocks({'content': entry['authorComment'], 'attachments': attachments}))
+        blocks.extend(comments)
     return blocks
 
 
@@ -166,9 +173,45 @@ def valid_image(folder, block):
         return False
 
 
+def txt_blocks(folder, text):
+    """Recover illustration positions from portable TXT references, without a cache."""
+    blocks, start = [], 0
+    for match in re.finditer(r'^\[삽화: (.+)\]\s*$', text, re.M):
+        if text[start:match.start()].strip():
+            blocks.append({'type': 'text', 'text': text[start:match.start()].strip()})
+        relative = match.group(1).strip()
+        block = {'type': 'image', 'alt': '삽화', 'reference': relative}
+        try:
+            # Only relative files inside the artwork folder; never fetch TXT URLs.
+            if Path(relative).is_absolute():
+                raise ValueError('절대 경로 삽화는 지원하지 않습니다.')
+            data = safe_path(folder, relative).read_bytes()
+            decode_image(data)
+            block.update(src=relative, sha256=digest(data))
+        except (OSError, ValueError):
+            pass
+        blocks.append(block)
+        start = match.end()
+    if text[start:].strip():
+        blocks.append({'type': 'text', 'text': text[start:].strip()})
+    return blocks
+
+
 def media_complete(folder, row):
     cache = load_cache(folder, row)
-    return bool(cache and all(b.get('src') and valid_image(folder, b) for b in cache['blocks'] if b['type'] == 'image'))
+    if cache:
+        blocks = cache['blocks']
+    else:
+        try:
+            raw = Path(row['path']).read_bytes()
+            if digest(raw) != row['sha256']:
+                return False
+            blocks = txt_blocks(folder, raw.decode('utf-8'))
+            if not any(b['type'] == 'image' for b in blocks):
+                return False  # Old plain TXT still needs source migration.
+        except (OSError, ValueError):
+            return False
+    return all(b.get('src') and valid_image(folder, b) for b in blocks if b['type'] == 'image')
 
 
 def save_episode(folder, item, entry, include_comment, image_fetch, write, check, warn, previous=None, episode_digits=5):
@@ -182,7 +225,7 @@ def save_episode(folder, item, entry, include_comment, image_fetch, write, check
             continue
         image_number += 1
         if block.get('unplaced'):
-            warn('회차 %s: PC 삽화의 본문 위치를 확인할 수 없어 본문 끝에 첨부합니다.' % item['id'])
+            warn('회차 %s: 삽화의 본문 위치를 확인할 수 없어 본문 끝에 첨부합니다.' % item['id'])
         prior = old.get(block['url'])
         if not block['url']:
             warn('회차 %s: 삽화 주소를 찾지 못했습니다. 텍스트는 저장합니다.' % item['id'])
@@ -298,26 +341,25 @@ def build_epub(folder, novel, records, output_name, check, warn, line_height=1.8
                     text = raw.decode('utf-8')
                     if text.startswith(title + '\n'):
                         text = text[len(title):].lstrip('\n')
-                    blocks = [{'type': 'text', 'text': text}]
+                    blocks = txt_blocks(Path(row['path']).parent, text)
                 body = []
                 for block in blocks:
                     if block['type'] == 'text':
                         body.append(text_xhtml(block['text']))
                     elif valid_image(Path(row['path']).parent, block):
-                        ext = Path(block['src']).suffix.lower().lstrip('.')
-                        mime = {'jpg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif'}.get(ext)
-                        if not mime:
-                            raise ValueError('EPUB 삽화 형식을 확인할 수 없습니다.')
-                        key = block['sha256']
+                        image_data, ext = decode_image(safe_path(Path(row['path']).parent, block['src']).read_bytes())
+                        mime = {'jpg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif'}[ext]
+                        key = digest(image_data)
                         if key not in images:
                             aid, target = 'image%d' % len(images), 'images/%s.%s' % (key, ext)
-                            z.writestr('OEBPS/' + target, safe_path(Path(row['path']).parent, block['src']).read_bytes())
+                            z.writestr('OEBPS/' + target, image_data)
                             manifest.append((aid, target, mime))
                             images[key] = target
                         body.append('<div class="illustration"><img src="%s" alt="%s"/></div>' % (images[key], html.escape(clean(block.get('alt') or '삽화'), quote=True)))
                     else:
                         body.append('<p class="missing-image">[삽화를 받지 못했습니다]</p>')
-                        warn('회차 %s: EPUB에 넣지 못한 삽화가 있습니다. 기존 파일 보완을 실행하세요.' % row['entry_id'])
+                        warn('회차 %s: 삽화 파일이 없거나 손상되어 EPUB에 넣지 못했습니다 (%s). 기존 파일 보완으로 다시 받아 주세요.' %
+                             (row['entry_id'], block.get('src') or block.get('reference') or '이미지 다운로드 실패/주소 없음'))
                 z.writestr('OEBPS/' + cid + '.xhtml', xhtml(title, '<h2>%s</h2>%s' % (html.escape(title), ''.join(body))))
                 manifest.append((cid, cid + '.xhtml', 'application/xhtml+xml'))
                 spine.append(cid)
