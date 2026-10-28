@@ -237,3 +237,23 @@ class BookFolderTests(unittest.TestCase):
             engine.update(error_title='최신 제목')
             engine.warn('작품 2 경고')
             self.assertIn('최신 제목', engine.snapshot()['last_warning'])
+
+    def test_refresh_summary_survives_log_limit_and_groups_repeated_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = c.Engine(Path(tmp) / 'test.db')
+            engine.state['kind'] = 'refresh'
+            engine.history.remember_book('1', '첫 작품')
+            engine.select_book_context('1')
+            engine.warn('중복 회차')
+            engine.warn('중복 회차')
+            for i in range(1005):
+                engine.update(message='정상 처리 %s' % i)
+            summary = engine.snapshot()['refresh_issues']
+            self.assertEqual(len(summary), 1)
+            self.assertEqual(summary[0]['count'], 2)
+            self.assertEqual(summary[0]['novel_id'], '1')
+            self.assertEqual(summary[0]['title'], '첫 작품')
+            self.assertEqual(len(engine.snapshot()['refresh_log']), 1000)
+            engine.state['kind'] = 'download'
+            engine.warn('일반 다운로드 경고')
+            self.assertEqual(engine.snapshot()['refresh_issues'], summary)

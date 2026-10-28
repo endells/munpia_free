@@ -147,7 +147,7 @@
 <div class="mf-card"><label for="novel_url">작품 주소 또는 번호</label><input id="novel_url" type="text" placeholder="https://m.munpia.com/novel/detail/599040"><div class="mf-actions"><button id="analyze" class="btn btn-primary">회차 분석</button><button id="download" class="btn btn-success" disabled>선택 회차 받기</button><button id="add_auto" type="button" class="btn btn-outline-primary" title="분석한 작품을 설정 목록에 저장합니다. 즉시 다운로드하지 않습니다." disabled>자동 수집 목록에 추가</button><button id="refresh_one" class="btn btn-outline-primary">이 작품 기존 파일 보완</button></div><small>최근 작업한 작품 · 선택하면 작품 번호만 입력됩니다.</small><div id="recent_books" class="mf-actions mf-recent" aria-label="최근 작업한 작품 5개"></div><h5 id="book_title"></h5><label class="mf-check"><input id="select_all" type="checkbox"> 받을 수 있는 회차 전체 선택</label><div class="mf-scroll"><table><thead><tr><th>선택</th><th>번호</th><th>회차</th><th>상태</th></tr></thead><tbody id="episodes"></tbody></table></div></div>
 {% elif page == 'status' %}
 <div class="mf-card"><h5>기존 파일 보완 로그</h5><small>최근 보완 작업의 최대 1,000건 · 한국 시간 · 2초마다 자동 갱신. 다음 보완 시작 또는 FF 재시작 시 초기화됩니다.</small>
-<div id="refresh_work_log" class="mf-log" role="log" aria-label="기존 파일 보완 로그" style="max-height:480px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere"></div></div>
+<div id="refresh_work_log" class="mf-log" role="log" aria-label="기존 파일 보완 로그" style="max-height:480px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere"></div><h5 style="margin-top:20px">실패·경고 요약</h5><p id="refresh_issue_status">아직 기존 파일 보완 기록이 없습니다.</p><ol id="refresh_issues" style="overflow-wrap:anywhere"></ol></div>
 {% elif page == 'log' %}
 <div class="mf-card"><h5>작업 로그</h5><p>최근 300건 · 최신순 · 최대 1,000건 보관 · 이 버전 적용 이후 기록</p>
 <div class="mf-actions"><button id="log_refresh" type="button" class="btn btn-outline-primary">새로고침</button><label class="mf-check"><input id="log_auto" type="checkbox" checked> 자동 갱신</label><a class="btn btn-outline-primary" href="/{{ package_name }}/log">FF 원본 로그 열기</a></div>
@@ -206,9 +206,16 @@ async function recentBooks(){
  d.rows.forEach(function(book){var button=document.createElement('button');button.type='button';button.textContent=book.id+' - '+book.title;button.addEventListener('click',function(){el('novel_url').value=book.id;el('novel_url').focus();});list.appendChild(button);});
 }
 var recentState='';
-var refreshLogText='';
+var refreshLogText='',refreshIssueText='';
 function showRefreshLog(s){
  var box=el('refresh_work_log');if(!box)return;
+ var issues=s.refresh_issues||[],issueKey=JSON.stringify([s.refresh_log_started,s.refresh_finished,issues]);
+ if(issueKey!==refreshIssueText){
+  refreshIssueText=issueKey;
+  el('refresh_issue_status').textContent=!s.refresh_log_started?'아직 기존 파일 보완 기록이 없습니다.':(s.refresh_finished?'보완 작업 종료 · ':'보완 작업 진행 중 · ')+(issues.length?'실패·경고 '+issues.length+'개 항목':'실패·경고 없음');
+  var list=el('refresh_issues');list.replaceChildren();
+  issues.forEach(function(r){var item=document.createElement('li');item.style.marginBottom='10px';item.style.color=r.level==='ERROR'?'#ffb4b4':'#ffd58a';item.textContent='['+(r.level==='ERROR'?'실패':'경고')+'] '+(r.novel_id?'작품 '+r.novel_id+' · ':'')+(r.title||'제목 확인 불가')+' — '+r.message+(r.count>1?' ('+r.count+'회)':'');list.appendChild(item);});
+ }
  var rows=s.refresh_log||[],text=rows.map(function(r){return new Date(r.time).toLocaleString('ko-KR',{timeZone:'Asia/Seoul',hour12:false})+' ['+r.level+'] '+r.message;}).join('\n');
  if(!text)text='아직 기존 파일 보완 기록이 없습니다.';
  if(text===refreshLogText)return;

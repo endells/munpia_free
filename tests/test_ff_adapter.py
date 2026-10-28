@@ -167,6 +167,8 @@ class AdapterTests(unittest.TestCase):
     def test_status_has_separate_refresh_log(self):
         html = self.client.get('/munpia_free/basic/status').get_data(as_text=True)
         self.assertIn('id="refresh_work_log"', html)
+        self.assertIn('id="refresh_issues"', html)
+        self.assertIn('실패·경고 요약', html)
         self.assertIn("timeZone:'Asia/Seoul'", html)
 
     def test_four_templates_render(self):

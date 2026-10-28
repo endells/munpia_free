@@ -661,15 +661,24 @@ class Engine:
         self.thread = None
         self.refresh_log = []
         self.refresh_log_started = None
+        self.refresh_issues = {}
+        self.refresh_finished = None
 
     def _refresh_log_locked(self, message, level='INFO'):
         if self.state.get('kind') == 'refresh' and message:
             self.refresh_log.append({'time': now(), 'level': level, 'message': str(message)[:2000]})
             del self.refresh_log[:-1000]
+            if level in ('ERROR', 'WARNING'):
+                nid = self.state.get('error_nid', '')
+                key = (nid, level, str(message))
+                if key not in self.refresh_issues:
+                    self.refresh_issues[key] = {'novel_id': nid, 'title': self.state.get('error_title', ''),
+                                               'level': level, 'message': str(message), 'count': 0}
+                self.refresh_issues[key]['count'] += 1
 
     def select_book_context(self, nid):
         # Reset first so a failed lookup never borrows the previous novel's title.
-        self.update(error_title='')
+        self.update(error_title='', error_nid=str(nid))
         rows = self.history.auto_books([str(nid)])
         title = rows[0]['title'] if rows else ''
         if title == '아직 확인하지 않은 작품':
@@ -688,7 +697,8 @@ class Engine:
                 values['last_error'] = self._error_with_title(values['last_error'])
             for key, level in (('message', 'INFO'), ('last_error', 'ERROR')):
                 if key in values and values[key] != self.state.get(key):
-                    self._refresh_log_locked(values[key], level)
+                    severity = 'ERROR' if key == 'message' and values.get('status') == 'failed' else level
+                    self._refresh_log_locked(values[key], severity)
             self.state.update(values)
 
     def snapshot(self):
@@ -696,6 +706,8 @@ class Engine:
             result = copy.deepcopy(self.state)
             result['refresh_log'] = copy.deepcopy(self.refresh_log)
             result['refresh_log_started'] = self.refresh_log_started
+            result['refresh_issues'] = copy.deepcopy(list(self.refresh_issues.values()))
+            result['refresh_finished'] = self.refresh_finished
             return result
 
     def cancel(self):
@@ -760,6 +772,8 @@ class Engine:
             if kind == 'refresh':
                 self.refresh_log = []
                 self.refresh_log_started = now()
+                self.refresh_issues = {}
+                self.refresh_finished = None
             self.stop.clear()
             self.state = {'status': 'running', 'kind': kind, 'message': '시작 중', 'completed': 0,
                           'failed': 0, 'skipped': 0, 'warnings': 0, 'done': 0, 'total': 0, 'started': now(), 'cancel_requested': False}
@@ -997,6 +1011,9 @@ class Engine:
                     self.update(message=state.get('message', '') + ' · 파일명 정리 %s개' % state.get('renamed', 0))
                 if state.get('renamed_folders'):
                     self.update(message=self.snapshot().get('message', '') + ' · 폴더명 변경 %s개' % state['renamed_folders'])
+                if kind == 'refresh':
+                    with self.guard:
+                        self.refresh_finished = now()
                 callback = config.get('on_finished')
                 if kind != 'analyze' and callable(callback):
                     callback({'state': self.snapshot(), 'downloads': downloads,
