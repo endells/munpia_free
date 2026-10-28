@@ -631,14 +631,27 @@ class Engine:
         self.guard = threading.Lock()
         self.state = {'status': 'idle', 'message': '대기 중', 'completed': 0, 'failed': 0, 'skipped': 0}
         self.thread = None
+        self.refresh_log = []
+        self.refresh_log_started = None
+
+    def _refresh_log_locked(self, message, level='INFO'):
+        if self.state.get('kind') == 'refresh' and message:
+            self.refresh_log.append({'time': now(), 'level': level, 'message': str(message)[:2000]})
+            del self.refresh_log[:-1000]
 
     def update(self, **values):
         with self.guard:
+            for key, level in (('message', 'INFO'), ('last_error', 'ERROR')):
+                if key in values and values[key] != self.state.get(key):
+                    self._refresh_log_locked(values[key], level)
             self.state.update(values)
 
     def snapshot(self):
         with self.guard:
-            return copy.deepcopy(self.state)
+            result = copy.deepcopy(self.state)
+            result['refresh_log'] = copy.deepcopy(self.refresh_log)
+            result['refresh_log_started'] = self.refresh_log_started
+            return result
 
     def cancel(self):
         self.stop.set()
@@ -648,6 +661,7 @@ class Engine:
         with self.guard:
             self.state['warnings'] = self.state.get('warnings', 0) + 1
             self.state['last_warning'] = message
+            self._refresh_log_locked(message, 'WARNING')
 
     def prepare_book(self, folder, novel, client):
         publication.write_info(folder, novel, atomic_write)
@@ -697,6 +711,9 @@ class Engine:
             except OSError:
                 handle.close()
                 raise MunpiaError('다른 문피아 작업(무료판·유료판 포함)이 진행 중입니다. 완료 후 다시 실행하세요.')
+            if kind == 'refresh':
+                self.refresh_log = []
+                self.refresh_log_started = now()
             self.stop.clear()
             self.state = {'status': 'running', 'kind': kind, 'message': '시작 중', 'completed': 0,
                           'failed': 0, 'skipped': 0, 'warnings': 0, 'done': 0, 'total': 0, 'started': now(), 'cancel_requested': False}
@@ -717,10 +734,14 @@ class Engine:
             if not root.is_absolute():
                 raise MunpiaError('다운로드 경로는 컨테이너 안의 절대 경로여야 합니다.')
             root = root.resolve()
+            if kind == 'refresh':
+                self.update(message='기존 파일 보완 시작 · 저장 경로: ' + str(root))
             original_ids = set(ids)
             scanned = folder_refresh.discover(root) if kind == 'refresh' else {}
             if kind == 'refresh' and config.get('scan_folders'):
                 ids = list(dict.fromkeys(list(ids) + list(scanned)))
+            if kind == 'refresh':
+                self.update(message='폴더 검색 완료 · 발견 %s개 작품 · 보완 대상 %s개 작품' % (len(scanned), len(ids)))
             # Local maintenance must finish even when login/detail requests fail.
             if kind == 'refresh':
                 def check_local():
@@ -732,7 +753,7 @@ class Engine:
                     try:
                         self.history.sync_peer(nid, root)
                         renamed = self.history.clean_filenames(nid, root, check_local, self.warn)
-                        self.update(renamed=self.snapshot().get('renamed', 0) + renamed)
+                        self.update(renamed=self.snapshot().get('renamed', 0) + renamed, message='작품 %s 파일명 정리 %s개' % (nid, renamed))
                     except Stopped:
                         raise
                     except Exception as exc:
@@ -798,11 +819,12 @@ class Engine:
                         self.update(failed=failed, last_error=str(exc))
                         continue
                     if kind == 'refresh' and verified_folder is not None:
+                        self.update(message='작품 %s 폴더 일치 확인: %s' % (nid, verified_folder.name))
                         added = folder_refresh.adopt(self.history, nid, novel, verified_folder,
                                                      chapters, root, client.check, self.warn)
-                        self.update(adopted=self.snapshot().get('adopted', 0) + added)
+                        self.update(adopted=self.snapshot().get('adopted', 0) + added, message='작품 %s 기존 TXT 이력 등록 %s개' % (nid, added))
                         renamed = self.history.clean_filenames(nid, root, client.check, self.warn)
-                        self.update(renamed=self.snapshot().get('renamed', 0) + renamed)
+                        self.update(renamed=self.snapshot().get('renamed', 0) + renamed, message='작품 %s 파일명 정리 %s개' % (nid, renamed))
                     # Only prune saved-list downloads after a complete, successful listing.
                     remove_paid = config.get('remove_paid_title')
                     if (kind == 'download' and selected is None and callable(remove_paid)

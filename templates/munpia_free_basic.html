@@ -145,6 +145,9 @@
 <small>쿠키 저장은 작품 목록·자동 수집 예약을 변경하거나 다운로드를 시작하지 않습니다.</small></div>
 {% elif page == 'manual' %}
 <div class="mf-card"><label for="novel_url">작품 주소 또는 번호</label><input id="novel_url" type="text" placeholder="https://m.munpia.com/novel/detail/599040"><div class="mf-actions"><button id="analyze" class="btn btn-primary">회차 분석</button><button id="download" class="btn btn-success" disabled>선택 회차 받기</button><button id="add_auto" type="button" class="btn btn-outline-primary" title="분석한 작품을 설정 목록에 저장합니다. 즉시 다운로드하지 않습니다." disabled>자동 수집 목록에 추가</button><button id="refresh_one" class="btn btn-outline-primary">이 작품 기존 파일 보완</button></div><small>최근 작업한 작품 · 선택하면 작품 번호만 입력됩니다.</small><div id="recent_books" class="mf-actions mf-recent" aria-label="최근 작업한 작품 5개"></div><h5 id="book_title"></h5><label class="mf-check"><input id="select_all" type="checkbox"> 받을 수 있는 회차 전체 선택</label><div class="mf-scroll"><table><thead><tr><th>선택</th><th>번호</th><th>회차</th><th>상태</th></tr></thead><tbody id="episodes"></tbody></table></div></div>
+{% elif page == 'status' %}
+<div class="mf-card"><h5>기존 파일 보완 로그</h5><small>최근 보완 작업의 최대 1,000건 · 한국 시간 · 2초마다 자동 갱신. 다음 보완 시작 또는 FF 재시작 시 초기화됩니다.</small>
+<div id="refresh_work_log" class="mf-log" role="log" aria-label="기존 파일 보완 로그" style="max-height:480px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere"></div></div>
 {% elif page == 'log' %}
 <div class="mf-card"><h5>작업 로그</h5><p>최근 300건 · 최신순 · 최대 1,000건 보관 · 이 버전 적용 이후 기록</p>
 <div class="mf-actions"><button id="log_refresh" type="button" class="btn btn-outline-primary">새로고침</button><label class="mf-check"><input id="log_auto" type="checkbox" checked> 자동 갱신</label><a class="btn btn-outline-primary" href="/{{ package_name }}/log">FF 원본 로그 열기</a></div>
@@ -203,12 +206,22 @@ async function recentBooks(){
  d.rows.forEach(function(book){var button=document.createElement('button');button.type='button';button.textContent=book.id+' - '+book.title;button.addEventListener('click',function(){el('novel_url').value=book.id;el('novel_url').focus();});list.appendChild(button);});
 }
 var recentState='';
+var refreshLogText='';
+function showRefreshLog(s){
+ var box=el('refresh_work_log');if(!box)return;
+ var rows=s.refresh_log||[],text=rows.map(function(r){return new Date(r.time).toLocaleString('ko-KR',{timeZone:'Asia/Seoul',hour12:false})+' ['+r.level+'] '+r.message;}).join('\n');
+ if(!text)text='아직 기존 파일 보완 기록이 없습니다.';
+ if(text===refreshLogText)return;
+ var bottom=box.scrollHeight-box.scrollTop-box.clientHeight<40;
+ box.textContent=text;refreshLogText=text;if(bottom)box.scrollTop=box.scrollHeight;
+}
 async function poll(){
  try{var data=await post('status'),s=data.state,busy=s.status==='running';
  el('state').textContent=s.message||s.status;el('state').title=s.message||s.status;el('counts').textContent='완료 '+(s.completed||0)+' · 건너뜀 '+(s.skipped||0)+' · 실패 '+(s.failed||0)+' · 이미지 경고 '+(s.warnings||0)+' | 현재 작품 '+(s.done||0)+' / '+(s.total||0);
  var percent=s.total?Math.min(100,Math.max(0,100*(s.done||0)/s.total)):0;el('bar').style.width=percent+'%';el('progress').setAttribute('aria-valuenow',String(Math.round(percent)));el('stop').disabled=!busy||s.cancel_requested;
  el('schedule').textContent='자동 수집: '+(s.scheduler_enabled?'사용 중':'꺼짐');
  el('last_error').textContent=[s.last_error,s.last_warning].filter(Boolean).join(' / ');
+ showRefreshLog(s);
  if(el('download'))el('download').disabled=busy||!novelId;
  if(page==='manual'){var rk=[s.started,s.status,s.message].join('|');if(rk!==recentState){await recentBooks();recentState=rk;}}
  if(s.analysis&&s.started!==lastAnalysis){lastAnalysis=s.started;renderAnalysis(s.analysis);}

@@ -148,3 +148,20 @@ class BookFolderTests(unittest.TestCase):
             self.assertTrue(list(good.glob('*.epub')))
             self.assertTrue((bad / '0001_one [10].txt').exists())
             self.assertFalse(engine.history.rows(nid='2'))
+
+    def test_refresh_log_is_bounded_and_retained_during_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = c.Engine(Path(tmp) / 'test.db')
+            engine.state['kind'] = 'refresh'
+            engine.update(message='폴더 검색 시작')
+            engine.warn('중복 파일 건너뜀')
+            self.assertEqual(engine.snapshot()['refresh_log'][-1]['level'], 'WARNING')
+            for i in range(1005):
+                engine.update(message='확인 %s' % i)
+            rows = engine.snapshot()['refresh_log']
+            self.assertEqual(len(rows), 1000)
+            engine.state['kind'] = 'download'
+            engine.update(message='일반 다운로드')
+            self.assertEqual(engine.snapshot()['refresh_log'], rows)
+            rows.clear()
+            self.assertEqual(len(engine.snapshot()['refresh_log']), 1000)
