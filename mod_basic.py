@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import secrets
 import threading
 from pathlib import Path
@@ -350,6 +351,20 @@ class ModuleBasic(PluginModuleBase):
             elif command == 'run':
                 conf = self.runtime_config()
                 engine.start('download', title_ids(conf['titles']), conf)
+            elif command == 'refresh_folder':
+                path = Path(str(arg1 or '').strip())
+                if not str(arg1 or '').strip() or not path.is_absolute() or not path.is_dir() or path.is_symlink():
+                    raise MunpiaError('존재하는 컨테이너 내부 폴더의 절대 경로를 선택하세요.')
+                path = path.resolve()
+                conf = self.runtime_config()
+                conf['download_path'] = str(path)
+                conf['run_source'] = '선택 폴더 기존 파일 보완'
+                conf.pop('remove_unavailable_title', None)
+                conf.pop('remove_paid_title', None)
+                match = re.fullmatch(r'.+ \[(\d+)\]', path.name)
+                conf['refresh_single_folder'] = bool(match)
+                conf['scan_folders'] = not bool(match)
+                engine.start('refresh', [match[1]] if match else [], conf)
             elif command == 'refresh':
                 conf = self.runtime_config()
                 conf['run_source'] = '기존 파일 보완'

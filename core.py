@@ -796,8 +796,9 @@ class Engine:
             root = root.resolve()
             if kind == 'refresh':
                 self.update(message='기존 파일 보완 시작 · 저장 경로: ' + str(root))
+            scoped_folder = kind == 'refresh' and config.get('refresh_single_folder', False)
             original_ids = set(ids)
-            scanned = folder_refresh.discover(root) if kind == 'refresh' else {}
+            scanned = ({str(ids[0]): [root]} if scoped_folder else folder_refresh.discover(root)) if kind == 'refresh' else {}
             if kind == 'refresh' and config.get('scan_folders'):
                 ids = list(dict.fromkeys(list(ids) + list(scanned)))
             if kind == 'refresh':
@@ -845,7 +846,8 @@ class Engine:
                             raise
                         skipped += 1
                         self.update(skipped=skipped)
-                        self.warn('작품 %s: %s 자동 수집 목록에서 제외합니다. 기존 파일은 보존합니다.' % (nid, exc))
+                        self.warn('작품 %s: %s %s 기존 파일은 보존합니다.' % (nid, exc,
+                                  '자동 수집 목록에서 제외합니다.' if callable(remove) and selected is None else '보완을 건너뜁니다.'))
                         continue
                     except MunpiaError as exc:
                         if kind != 'refresh':
@@ -855,11 +857,11 @@ class Engine:
                         self.update(failed=failed, last_error=str(exc))
                         continue
                     verified_folder = None
-                    if self.history.rename_book_folder(nid, novel['title'], root, self.warn):
+                    if not scoped_folder and self.history.rename_book_folder(nid, novel['title'], root, self.warn):
                         self.update(renamed_folders=self.snapshot().get('renamed_folders', 0) + 1,
                                     message='작품 %s 최신 제목으로 폴더 병합·정리: %s' % (nid, novel['title']))
-                    canonical_folder = root / (safe_name(novel['title']) + ' [%s]' % nid)
-                    remaining = folder_refresh.discover(root).get(str(nid), [])
+                    canonical_folder = root if scoped_folder else root / (safe_name(novel['title']) + ' [%s]' % nid)
+                    remaining = [root] if scoped_folder else folder_refresh.discover(root).get(str(nid), [])
                     if kind == 'refresh' and len(remaining) == 1 and remaining[0] == canonical_folder:
                         verified_folder = canonical_folder
                     elif kind == 'refresh' and str(nid) not in original_ids:

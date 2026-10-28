@@ -257,3 +257,31 @@ class BookFolderTests(unittest.TestCase):
             engine.state['kind'] = 'download'
             engine.warn('일반 다운로드 경고')
             self.assertEqual(engine.snapshot()['refresh_issues'], summary)
+
+    def test_scoped_book_folder_leaves_sibling_unchanged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            selected = Path(tmp) / 'Old [1]'
+            sibling = Path(tmp) / 'Other [1]'
+            for folder in (selected, sibling):
+                folder.mkdir()
+                (folder / '0001_one [10].txt').write_text('1. one\n\nText')
+            def transport(url, params):
+                if url.endswith('my-info-simple'):
+                    return {'login': True}
+                if url.endswith('/chapters'):
+                    data = {'total': 1, 'next': False, 'list': [{'id': 10, 'num': 1, 'title': 'one', 'free': True}]}
+                elif '/entries/' in url:
+                    data = {'entry': {'id': 10, 'content': 'Text'}}
+                else:
+                    data = {'novelInfo': {'id': 1, 'title': 'Latest'}}
+                return {'code': 'M000_00000', 'result': data}
+            engine = c.Engine(Path(tmp) / 'test.db', client_factory=lambda **kw: c.Client(transport=transport, **kw))
+            conf = dict(download_path=str(selected), request_delay=1, cookie='test=value', max_per_title=10,
+                        make_epub=False, include_author_comment=False, refresh_single_folder=True)
+            engine.start('refresh', ['1'], conf)
+            engine.thread.join(5)
+            self.assertFalse(engine.thread.is_alive())
+            self.assertEqual(engine.snapshot()['status'], 'completed')
+            self.assertTrue((selected / '0001_one.txt').exists())
+            self.assertEqual([p.name for p in sibling.iterdir()], ['0001_one [10].txt'])
+            self.assertFalse((Path(tmp) / 'Latest [1]').exists())

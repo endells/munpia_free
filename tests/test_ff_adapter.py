@@ -171,6 +171,27 @@ class AdapterTests(unittest.TestCase):
         self.assertIn('실패·경고 요약', html)
         self.assertIn("timeZone:'Asia/Seoul'", html)
 
+    def test_selected_folder_command_preserves_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            book = Path(tmp) / 'Book [123]'
+            book.mkdir()
+            before = dict(self.values)
+            with patch.object(self.module._engine(), 'start') as start:
+                response = self.send('refresh_folder', arg1=str(book))
+                self.assertEqual(response.json['ret'], 'success')
+                kind, ids, config = start.call_args.args
+                self.assertEqual((kind, ids), ('refresh', ['123']))
+                self.assertEqual(config['download_path'], str(book))
+                self.assertTrue(config['refresh_single_folder'])
+                self.assertFalse(config['scan_folders'])
+                self.assertEqual(self.values, before)
+                self.send('refresh_folder', arg1=tmp)
+                self.assertEqual(start.call_args.args[1], [])
+                self.assertTrue(start.call_args.args[2]['scan_folders'])
+                start.reset_mock()
+                self.assertEqual(self.send('refresh_folder', arg1='relative').json['ret'], 'error')
+                start.assert_not_called()
+
     def test_four_templates_render(self):
         for page in ['setting','integration','cookie','manual','status','history','log']:
             r = self.client.get('/munpia_free/basic/'+page)

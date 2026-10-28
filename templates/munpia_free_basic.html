@@ -96,6 +96,9 @@
 <label for="basic_interval">자동 수집 간격 (분)</label><input id="basic_interval" type="number" min="10" max="10080" value="{{ config.basic_interval }}">
 <label class="mf-check"><input id="basic_auto_start" type="checkbox" {% if config.basic_auto_start %}checked{% endif %}> 자동 수집 사용 (FF 재시작 후에도 유지)</label><small>설정 저장만으로는 다운로드를 시작하지 않습니다. 자동 수집은 예약 시각에 실행하며, 바로 받으려면 저장된 목록 지금 받기를 누르세요.</small>
 <div class="mf-actions"><button id="save" class="btn btn-primary">설정 저장</button><button id="run" class="btn btn-success">저장된 목록 지금 받기</button><button id="refresh_saved" class="btn btn-outline-primary">저장 폴더·목록 기존 파일 보완</button></div>
+<div class="mf-card"><label for="refresh_folder_path">보완할 폴더</label><input id="refresh_folder_path" type="text" value="{{ config.download_path }}" placeholder="/data/downloads/문피아/작품명 [작품번호]">
+<div class="mf-actions"><button id="choose_refresh_folder" type="button" class="btn btn-outline-primary">폴더 선택</button><button id="run_refresh_folder" type="button" class="btn btn-primary">선택 폴더 보완</button></div>
+<small>작품명 [작품번호] 폴더를 선택하면 해당 폴더만 보완합니다. 상위 폴더를 선택하면 바로 아래 작품 폴더들을 보완합니다. 저장 경로 설정과 자동 수집 목록은 변경하지 않습니다.</small></div>
 <small>기존 파일 보완: 저장 경로의 제목 [작품번호] 폴더를 조회하고 같은 작품 번호의 폴더들을 최신 제목으로 합친 뒤 TXT를 보완합니다. 내용이 다른 충돌 파일은 .duplicates에 보관합니다. 문피아 조회 전에 파일명을 먼저 정리합니다. 작품 번호가 같고 제목이 바뀌면 조회 성공 시 폴더명도 갱신합니다. 이력에서 확인된 TXT 파일명 뒤의 [회차ID]를 제거하고 무료·유료판 이력을 함께 갱신합니다. 동명 파일은 덮어쓰지 않습니다. 이미 받은 TXT의 제목·표지·info.xml을 보완하고, 누락된 삽화를 복원합니다. EPUB 사용 시 새 서식으로 합본을 다시 만듭니다. 회차 재조회에는 저장된 쿠키와 작품당 상한이 적용됩니다.</small>
 <div class="mf-note">무료 회차 전용입니다. 유료 회차 구매나 결제는 하지 않습니다. TXT 맨 위에 회차 번호·제목을 넣고, 표지·info.xml·본문 삽화를 함께 저장합니다. EPUB에는 표지와 삽화를 포함합니다.</div>
 </div>
@@ -262,6 +265,12 @@ async function logPoll(){try{if(el('log_auto').checked)await activity();}catch(e
 if(page==='log')logPoll();
 window.addEventListener('beforeunload',function(){clearTimeout(logTimer);});
 action('run',async function(){message((await post('run')).msg);});
+action('choose_refresh_folder',async function(){
+ if(typeof window.globalSelectLocalFolder!=='function')throw new Error('이 FF 버전에서는 폴더 선택창을 사용할 수 없습니다. 경로를 직접 입력하세요.');
+ var d=await post('browse_path',el('refresh_folder_path').value.trim()||'/');
+ window.globalSelectLocalFolder('기존 파일 보완 대상 폴더',d.path,function(path){if(typeof path==='string'&&path.trim())el('refresh_folder_path').value=path.trim();});
+});
+action('run_refresh_folder',async function(){var path=el('refresh_folder_path').value.trim();if(!path)throw new Error('보완할 폴더를 선택하세요.');message((await post('refresh_folder',path)).msg);});
 action('refresh_saved',async function(){message((await post('refresh')).msg);});
 action('refresh_one',async function(){var value=el('novel_url').value.trim();if(!value)throw new Error('작품 주소를 입력하세요.');message((await post('refresh',value)).msg);});
 action('analyze',async function(){message((await post('analyze',el('novel_url').value)).msg);novelId='';el('download').disabled=true;el('add_auto').disabled=true;});
