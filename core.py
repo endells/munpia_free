@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-from . import publication, folder_refresh
+from . import publication, folder_refresh, folder_merge
 
 
 class MunpiaError(Exception):
@@ -455,8 +455,8 @@ class History:
         if not folders:
             return False
         if len(folders) != 1:
-            warn('작품 %s 폴더가 여러 개여서 자동 이름 변경을 건너뜁니다.' % nid)
-            return False
+            return folder_merge.merge(self, nid, title, root, target,
+                                      'munpia_gold_history.db', 'munpia_free_history.db', now, warn)
         source = folders[0]
         if source == target:
             return False
@@ -819,21 +819,17 @@ class Engine:
                         self.warn('작품 %s 정보 조회 실패: %s' % (nid, exc))
                         self.update(failed=failed, last_error=str(exc))
                         continue
-                    candidates_folders = scanned.get(str(nid), [])
                     verified_folder = None
-                    if kind == 'refresh' and candidates_folders:
-                        if len(candidates_folders) == 1:
-                            candidate = candidates_folders[0]
-                            local_title = candidate.name.rsplit(' [', 1)[0]
-                            if folder_refresh.normalized(local_title) == folder_refresh.normalized(safe_name(novel['title'])):
-                                verified_folder = candidate
-                        if str(nid) not in original_ids and verified_folder is None:
-                            self.warn('작품 %s: 폴더 제목 불일치 또는 중복 폴더로 보완을 건너뜁니다.' % nid)
-                            continue
                     if self.history.rename_book_folder(nid, novel['title'], root, self.warn):
-                        if verified_folder is not None:
-                            verified_folder = root / (safe_name(novel['title']) + ' [%s]' % nid)
-                        self.update(renamed_folders=self.snapshot().get('renamed_folders', 0) + 1)
+                        self.update(renamed_folders=self.snapshot().get('renamed_folders', 0) + 1,
+                                    message='작품 %s 최신 제목으로 폴더 병합·정리: %s' % (nid, novel['title']))
+                    canonical_folder = root / (safe_name(novel['title']) + ' [%s]' % nid)
+                    remaining = folder_refresh.discover(root).get(str(nid), [])
+                    if kind == 'refresh' and len(remaining) == 1 and remaining[0] == canonical_folder:
+                        verified_folder = canonical_folder
+                    elif kind == 'refresh' and str(nid) not in original_ids:
+                        self.warn('작품 %s 폴더를 안전하게 병합하지 못해 보완을 건너뜁니다.' % nid)
+                        continue
                     self.history.remember_book(nid, novel['title'])
                     self.history.sync_peer(nid, root)
                     try:
@@ -896,7 +892,8 @@ class Engine:
                     if wanted is None:
                         candidates = candidates[:int(config['max_per_title'])]
                     self.update(total=len(candidates), done=0, current_title=novel['title'], skipped=skipped)
-                    folder = (Path(records[0]['path']).parent if records else
+                    folder = (canonical_folder if canonical_folder.is_dir() else
+                              Path(records[0]['path']).parent if records else
                               root / ('%s [%s]' % (safe_name(novel['title']), nid)))
                     # Only plugin-created names are used; guard against symlink escapes too.
                     folder.resolve().relative_to(root)

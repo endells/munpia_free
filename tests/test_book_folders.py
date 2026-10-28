@@ -33,9 +33,10 @@ class BookFolderTests(unittest.TestCase):
             self.assertFalse(own.rename_book_folder('1', 'New', root, warnings.append))
             self.assertEqual(warnings, [])
             (root / 'Other [1]').mkdir()
-            self.assertFalse(own.rename_book_folder('1', 'Third', root, warnings.append))
-            self.assertTrue((root / 'New [1]').exists())
-            self.assertEqual(len(warnings), 1)
+            self.assertTrue(own.rename_book_folder('1', 'Third', root, warnings.append))
+            self.assertTrue((root / 'Third [1]').exists())
+            self.assertFalse((root / 'New [1]').exists())
+            self.assertEqual(len(warnings), 0)
 
     def test_failed_database_commit_rolls_back_folder_move(self):
         from contextlib import contextmanager
@@ -125,6 +126,9 @@ class BookFolderTests(unittest.TestCase):
             (good / '00001_one [10].txt').write_text('1. one\n\nExisting text')
             (good / '0001_one.txt').write_text('1. one\n\nExisting text')
             (bad / '0001_one [10].txt').write_text('Existing text')
+            older = root / 'Old title [1]'
+            older.mkdir()
+            (older / '0001_one.txt').write_text('1. one\n\nExisting text')
             def transport(url, params):
                 if url.endswith('my-info-simple'):
                     return {'login': True}
@@ -144,11 +148,13 @@ class BookFolderTests(unittest.TestCase):
             self.assertFalse(engine.thread.is_alive())
             self.assertEqual(engine.snapshot()['status'], 'completed')
             self.assertEqual(engine.snapshot()['adopted'], 1)
+            self.assertFalse(older.exists())
             self.assertEqual(engine.snapshot()['renamed'], 1)
             self.assertTrue(engine.history.complete('1', '10', root))
             self.assertTrue((good / '0001_one.txt').exists())
             self.assertTrue(list(good.glob('*.epub')))
-            self.assertTrue((bad / '0001_one [10].txt').exists())
+            self.assertFalse(bad.exists())
+            self.assertTrue((root / 'Book [2]' / '0001_one [10].txt').exists())
             self.assertFalse(engine.history.rows(nid='2'))
 
     def test_refresh_log_is_bounded_and_retained_during_download(self):
@@ -167,3 +173,51 @@ class BookFolderTests(unittest.TestCase):
             self.assertEqual(engine.snapshot()['refresh_log'], rows)
             rows.clear()
             self.assertEqual(len(engine.snapshot()['refresh_log']), 1000)
+
+    def test_merge_conflicts_preserves_bytes_and_both_histories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'books'
+            first, second = root / 'A [1]', root / 'B [1]'
+            first.mkdir(parents=True)
+            second.mkdir()
+            (first / '001_one.txt').write_bytes(b'first version')
+            (second / '001_one.txt').write_bytes(b'second version')
+            (second / '002_two.txt').write_bytes(b'episode two')
+            own = c.History(Path(tmp) / 'munpia_free_history.db')
+            peer = c.History(Path(tmp) / 'munpia_gold_history.db')
+            for history, folder in ((own, first), (peer, second)):
+                path = folder / '001_one.txt'
+                history.record('1', {'id': 10, 'num': 1}, 'old', 'completed', path,
+                               hashlib.sha256(path.read_bytes()).hexdigest())
+            warnings = []
+            self.assertTrue(own.rename_book_folder('1', 'Latest', root, warnings.append))
+            target = root / 'Latest [1]'
+            self.assertFalse(first.exists())
+            self.assertFalse(second.exists())
+            self.assertEqual((target / '002_two.txt').read_bytes(), b'episode two')
+            self.assertEqual(Path(own.rows(nid='1')[0]['path']).read_bytes(), b'first version')
+            self.assertEqual(Path(peer.rows(nid='1')[0]['path']).read_bytes(), b'second version')
+            self.assertTrue(own.complete('1', 10, root))
+            self.assertTrue(peer.complete('1', 10, root))
+            self.assertTrue(list((target / '.duplicates').glob('folder_merge_*')))
+            self.assertEqual(warnings, [])
+
+    def test_merge_database_failure_preserves_both_source_folders(self):
+        from contextlib import contextmanager
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ('A [1]', 'B [1]'):
+                (root / name).mkdir()
+                (root / name / 'keep.txt').write_text(name)
+            history = c.History(root / 'test.db')
+            original = history.connect
+            @contextmanager
+            def failing_commit():
+                with original() as db:
+                    yield db
+                    raise OSError('commit failed')
+            with patch.object(history, 'connect', failing_commit):
+                self.assertFalse(history.rename_book_folder('1', 'Latest', root, lambda m: None))
+            self.assertFalse((root / 'Latest [1]').exists())
+            for name in ('A [1]', 'B [1]'):
+                self.assertEqual((root / name / 'keep.txt').read_text(), name)
