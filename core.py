@@ -495,23 +495,45 @@ class History:
             warn('작품 %s 폴더 이름 변경 실패: %s' % (nid, exc))
             return False
 
-    def clean_filenames(self, nid, root, check, warn):
+    def clean_filenames(self, nid, root, check, warn, digits=None, report=None):
         """Remove only the recorded legacy ID suffix; preserve bytes and peer history."""
+        import uuid
         renamed = 0
         for row in self.rows(nid=nid):
             check()
-            source = Path(row['path'])
-            suffix = ' [%s].txt' % row['entry_id']
-            if (source.is_symlink() or not source.name.endswith(suffix)
-                    or not re.match(r'^\d+_', source.name) or not valid_record(row, root)):
+            recorded = Path(row['path'])
+            if recorded.is_symlink() or not valid_record(row, root):
                 continue
-            target = source.with_name(source.name[:-len(suffix)] + '.txt')
+            key = folder_refresh.file_key(recorded, row['entry_id'])
+            if key is None:
+                continue
+            number, title = key
+            width = int(digits) if digits is not None else len(recorded.name.split('_', 1)[0])
+            target = recorded.with_name(('%0*d_' % (width, number)) + title + '.txt')
+            candidates = [p for p in recorded.parent.glob('*.txt') if p.is_file() and not p.is_symlink()
+                          and folder_refresh.file_key(p, row['entry_id']) == key]
+            if candidates == [target]:
+                continue
+            backups = []
             linked = False
             try:
                 target.resolve().relative_to(Path(root).resolve())
-                # Hard-link creation is exclusive: even a racing file cannot be overwritten.
-                os.link(source, target)
-                linked = True
+                if target.is_symlink():
+                    raise ValueError('대상 파일이 심볼릭 링크입니다.')
+                chosen = recorded.read_bytes()
+                for other in candidates:
+                    if other == recorded or other.read_bytes() == chosen:
+                        continue
+                    archive = target.parent / '.duplicates'
+                    if archive.is_symlink():
+                        raise ValueError('보관 폴더가 심볼릭 링크입니다.')
+                    archive.mkdir(exist_ok=True)
+                    backup = archive / (uuid.uuid4().hex + '_' + other.name)
+                    other.rename(backup)
+                    backups.append((backup, other))
+                if not target.exists():
+                    os.link(recorded, target)
+                    linked = True
                 with self.connect() as db:
                     schemas = ['main']
                     own = Path(self.path)
@@ -520,22 +542,28 @@ class History:
                         db.execute('ATTACH DATABASE ? AS peer', (str(peer),))
                         schemas.append('peer')
                     for schema in schemas:
-                        db.execute(
-                            "UPDATE " + schema + ".entries SET path=?, updated=? "
-                            "WHERE novel_id=? AND entry_id=? AND path=? AND sha256=? AND status='completed'",
-                            (str(target), now(), row['novel_id'], row['entry_id'],
-                             str(source), row['sha256']))
+                        for old in candidates:
+                            db.execute(
+                                "UPDATE " + schema + ".entries SET path=?,sha256=?,updated=? "
+                                "WHERE novel_id=? AND entry_id=? AND path=? AND status='completed'",
+                                (str(target), row['sha256'], now(), row['novel_id'], row['entry_id'], str(old)))
             except Exception as exc:
                 if linked:
                     target.unlink()
-                warn('파일명 정리 건너뜀: %s (%s)' % (source.name, exc))
+                for backup, old in reversed(backups):
+                    backup.rename(old)
+                warn('파일명 정리 건너뜀: %s (%s)' % (recorded.name, exc))
                 continue
-            # History commits before removing the old name, so interruptions preserve the data.
-            try:
-                source.unlink()
-            except OSError as exc:
-                warn('새 파일명은 적용됐지만 이전 이름 정리에 실패했습니다: %s (%s)' % (source.name, exc))
+            for old in candidates:
+                try:
+                    if old != target and old.exists():
+                        old.unlink()
+                except OSError as exc:
+                    warn('중복 파일 정리 실패: %s (%s)' % (old.name, exc))
             renamed += 1
+            if report:
+                report('파일 정리: %s → %s · 중복 %s개 · 내용 다른 파일 보관 %s개' %
+                       (recorded.name, target.name, max(0, len(candidates) - 1), len(backups)))
         return renamed
 
     def remember_book(self, nid, title):
@@ -752,7 +780,8 @@ class Engine:
                     self.update(message='작품 %s 기존 파일명을 정리합니다.' % nid)
                     try:
                         self.history.sync_peer(nid, root)
-                        renamed = self.history.clean_filenames(nid, root, check_local, self.warn)
+                        renamed = self.history.clean_filenames(nid, root, check_local, self.warn, config.get('episode_digits'),
+                            lambda message: self.update(message=message))
                         self.update(renamed=self.snapshot().get('renamed', 0) + renamed, message='작품 %s 파일명 정리 %s개' % (nid, renamed))
                     except Stopped:
                         raise
@@ -823,7 +852,8 @@ class Engine:
                         added = folder_refresh.adopt(self.history, nid, novel, verified_folder,
                                                      chapters, root, client.check, self.warn)
                         self.update(adopted=self.snapshot().get('adopted', 0) + added, message='작품 %s 기존 TXT 이력 등록 %s개' % (nid, added))
-                        renamed = self.history.clean_filenames(nid, root, client.check, self.warn)
+                        renamed = self.history.clean_filenames(nid, root, client.check, self.warn, config.get('episode_digits'),
+                            lambda message: self.update(message=message))
                         self.update(renamed=self.snapshot().get('renamed', 0) + renamed, message='작품 %s 파일명 정리 %s개' % (nid, renamed))
                     # Only prune saved-list downloads after a complete, successful listing.
                     remove_paid = config.get('remove_paid_title')

@@ -100,7 +100,7 @@ class SharedFilesTests(unittest.TestCase):
             self.assertFalse(engine.thread.is_alive())
             self.assertEqual(engine.snapshot()['renamed'], 1)
             self.assertFalse(path.exists())
-            self.assertTrue((folder / '001_old.txt').exists())
+            self.assertTrue((folder / '0001_old.txt').exists())
             self.assertTrue(peer.complete('1', '10', root))
             original = (folder / '0002_two.txt').read_bytes()
             chapters.append({'id': 30, 'num': 2, 'title': 'two', 'free': True})

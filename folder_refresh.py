@@ -20,6 +20,13 @@ def discover(root):
     return dict(result)
 
 
+def file_key(path, entry_id):
+    match = re.fullmatch(r'(\d+)_(.+?)(?: \[(\d+)\])?\.txt', path.name)
+    if not match or (match[3] and match[3] != str(entry_id)):
+        return None
+    return int(match[1]), match[2]
+
+
 def adopt(history, nid, novel, folder, chapters, root, check, warn):
     by_number = defaultdict(list)
     files = defaultdict(list)
@@ -32,6 +39,10 @@ def adopt(history, nid, novel, folder, chapters, root, check, warn):
     count = 0
     for number, paths in files.items():
         check()
+        if len(paths) > 1 and len(by_number[number]) == 1:
+            keys = {file_key(p, by_number[number][0]['id']) for p in paths}
+            if None not in keys and len(keys) == 1:
+                paths = sorted(paths, key=lambda p: (' [' in p.name, len(p.name)))[:1]
         if len(paths) != 1 or len(by_number[number]) != 1:
             warn('작품 %s %s화: 회차 또는 파일이 중복되거나 일치하지 않아 건너뜁니다.' % (nid, number))
             continue

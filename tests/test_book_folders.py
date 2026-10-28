@@ -122,6 +122,8 @@ class BookFolderTests(unittest.TestCase):
             good.mkdir(parents=True)
             bad.mkdir()
             (good / '0001_one [10].txt').write_text('1. one\n\nExisting text')
+            (good / '00001_one [10].txt').write_text('1. one\n\nExisting text')
+            (good / '0001_one.txt').write_text('1. one\n\nExisting text')
             (bad / '0001_one [10].txt').write_text('Existing text')
             def transport(url, params):
                 if url.endswith('my-info-simple'):

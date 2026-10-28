@@ -44,12 +44,13 @@ class FilenameCleanupTests(unittest.TestCase):
             (root / '001_title.txt').write_bytes(b'different')
             (root / '002_title [2].txt').write_bytes(b'damaged')
             warnings = []
-            self.assertEqual(history.clean_filenames('1', root, lambda: None, warnings.append), 0)
-            self.assertEqual((root / '001_title.txt').read_bytes(), b'different')
-            self.assertTrue((root / '001_title [1].txt').exists())
+            self.assertEqual(history.clean_filenames('1', root, lambda: None, warnings.append), 1)
+            self.assertEqual((root / '001_title.txt').read_bytes(), b'original')
+            self.assertFalse((root / '001_title [1].txt').exists())
+            self.assertEqual(next((root / '.duplicates').iterdir()).read_bytes(), b'different')
             self.assertTrue((root / '002_title [2].txt').exists())
             self.assertTrue((root / '003_title [999].txt').exists())
-            self.assertEqual(len(warnings), 1)
+            self.assertEqual(len(warnings), 0)
 
     def test_database_failure_keeps_original_and_removes_new_link(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -69,3 +70,19 @@ class FilenameCleanupTests(unittest.TestCase):
             self.assertTrue(history.complete('1', '1', root))
             self.assertEqual(len(warnings), 1)
 
+
+    def test_three_variants_consolidate_and_preserve_canonical_history(self):
+        for recorded_name in ('00001_프롤로그 [10].txt', '0001_프롤로그.txt'):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                names = ['00001_프롤로그 [10].txt', '0001_프롤로그 [10].txt', '0001_프롤로그.txt']
+                for name in names:
+                    (root / name).write_bytes(b'same text')
+                history = c.History(root / 'test.db')
+                history.record('1', {'id': 10, 'num': 1}, 'Book', 'completed', root / recorded_name,
+                               hashlib.sha256(b'same text').hexdigest())
+                warnings = []
+                self.assertEqual(history.clean_filenames('1', root, lambda: None, warnings.append, 4), 1)
+                self.assertEqual([p.name for p in root.glob('*.txt')], ['0001_프롤로그.txt'])
+                self.assertTrue(history.complete('1', 10, root))
+                self.assertEqual(warnings, [])
