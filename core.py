@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
-from . import publication
+from . import publication, folder_refresh
 
 
 class MunpiaError(Exception):
@@ -685,7 +685,7 @@ class Engine:
     def start(self, kind, ids, config, selected=None):
         if kind not in ('analyze', 'download', 'refresh'):
             raise MunpiaError('지원하지 않는 작업입니다.')
-        if not ids:
+        if not ids and not (kind == 'refresh' and config.get('scan_folders')):
             raise MunpiaError('작품을 등록하거나 URL을 입력하세요.')
         import fcntl
         with self.guard:
@@ -717,12 +717,16 @@ class Engine:
             if not root.is_absolute():
                 raise MunpiaError('다운로드 경로는 컨테이너 안의 절대 경로여야 합니다.')
             root = root.resolve()
+            original_ids = set(ids)
+            scanned = folder_refresh.discover(root) if kind == 'refresh' else {}
+            if kind == 'refresh' and config.get('scan_folders'):
+                ids = list(dict.fromkeys(list(ids) + list(scanned)))
             # Local maintenance must finish even when login/detail requests fail.
             if kind == 'refresh':
                 def check_local():
                     if self.stop.is_set():
                         raise Stopped()
-                for nid in ids:
+                for nid in original_ids:
                     check_local()
                     self.update(message='작품 %s 기존 파일명을 정리합니다.' % nid)
                     try:
@@ -765,7 +769,20 @@ class Engine:
                         self.warn('작품 %s 정보 조회 실패: %s' % (nid, exc))
                         self.update(failed=failed, last_error=str(exc))
                         continue
+                    candidates_folders = scanned.get(str(nid), [])
+                    verified_folder = None
+                    if kind == 'refresh' and candidates_folders:
+                        if len(candidates_folders) == 1:
+                            candidate = candidates_folders[0]
+                            local_title = candidate.name.rsplit(' [', 1)[0]
+                            if folder_refresh.normalized(local_title) == folder_refresh.normalized(safe_name(novel['title'])):
+                                verified_folder = candidate
+                        if str(nid) not in original_ids and verified_folder is None:
+                            self.warn('작품 %s: 폴더 제목 불일치 또는 중복 폴더로 보완을 건너뜁니다.' % nid)
+                            continue
                     if self.history.rename_book_folder(nid, novel['title'], root, self.warn):
+                        if verified_folder is not None:
+                            verified_folder = root / (safe_name(novel['title']) + ' [%s]' % nid)
                         self.update(renamed_folders=self.snapshot().get('renamed_folders', 0) + 1)
                     self.history.remember_book(nid, novel['title'])
                     self.history.sync_peer(nid, root)
@@ -780,6 +797,12 @@ class Engine:
                         self.warn('작품 %s 회차 조회 실패: %s' % (nid, exc))
                         self.update(failed=failed, last_error=str(exc))
                         continue
+                    if kind == 'refresh' and verified_folder is not None:
+                        added = folder_refresh.adopt(self.history, nid, novel, verified_folder,
+                                                     chapters, root, client.check, self.warn)
+                        self.update(adopted=self.snapshot().get('adopted', 0) + added)
+                        renamed = self.history.clean_filenames(nid, root, client.check, self.warn)
+                        self.update(renamed=self.snapshot().get('renamed', 0) + renamed)
                     # Only prune saved-list downloads after a complete, successful listing.
                     remove_paid = config.get('remove_paid_title')
                     if (kind == 'download' and selected is None and callable(remove_paid)

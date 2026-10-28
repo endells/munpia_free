@@ -353,6 +353,7 @@ class ModuleBasic(PluginModuleBase):
             elif command == 'refresh':
                 conf = self.runtime_config()
                 conf['run_source'] = '기존 파일 보완'
+                conf['scan_folders'] = not bool(arg1)
                 ids = [parse_id(arg1)] if arg1 else title_ids(conf['titles'])
                 engine.start('refresh', ids, conf)
             elif command == 'stop':

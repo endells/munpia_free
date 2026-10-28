@@ -113,3 +113,38 @@ class BookFolderTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             self.assertEqual(engine.snapshot()['failed'], 1)
             self.assertEqual(engine.snapshot()['skipped'], 1)
+
+    def test_scan_without_saved_list_adopts_only_matching_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'books'
+            good = root / 'Book [1]'
+            bad = root / 'Wrong [2]'
+            good.mkdir(parents=True)
+            bad.mkdir()
+            (good / '0001_one [10].txt').write_text('1. one\n\nExisting text')
+            (bad / '0001_one [10].txt').write_text('Existing text')
+            def transport(url, params):
+                if url.endswith('my-info-simple'):
+                    return {'login': True}
+                if url.endswith('/chapters'):
+                    self.assertNotIn('/2/', url)
+                    data = {'total': 1, 'next': False, 'list': [{'id': 10, 'num': 1, 'title': 'one', 'free': True}]}
+                elif '/entries/' in url:
+                    data = {'entry': {'id': 10, 'content': 'Existing text'}}
+                else:
+                    data = {'novelInfo': {'id': int(url.rsplit('/', 1)[1]), 'title': 'Book'}}
+                return {'code': 'M000_00000', 'result': data}
+            engine = c.Engine(Path(tmp) / 'test.db', client_factory=lambda **kw: c.Client(transport=transport, **kw))
+            conf = dict(download_path=str(root), request_delay=1, cookie='test=value', max_per_title=10,
+                        make_epub=True, include_author_comment=False, scan_folders=True)
+            engine.start('refresh', [], conf)
+            engine.thread.join(5)
+            self.assertFalse(engine.thread.is_alive())
+            self.assertEqual(engine.snapshot()['status'], 'completed')
+            self.assertEqual(engine.snapshot()['adopted'], 1)
+            self.assertEqual(engine.snapshot()['renamed'], 1)
+            self.assertTrue(engine.history.complete('1', '10', root))
+            self.assertTrue((good / '0001_one.txt').exists())
+            self.assertTrue(list(good.glob('*.epub')))
+            self.assertTrue((bad / '0001_one [10].txt').exists())
+            self.assertFalse(engine.history.rows(nid='2'))
