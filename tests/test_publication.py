@@ -62,6 +62,30 @@ class PublicationTests(unittest.TestCase):
         self.assertFalse(self.engine.thread.is_alive())
         return self.engine.snapshot()
 
+    def test_named_images_and_pc_text_survive_media_failure(self):
+        item = {'id': 10, 'num': 3, 'title': '시험 제목'}
+        entry = {'content': '합성 본문', '_source': 'pc', 'attachments': [
+            {'imageUrl': 'https://cdn1.munpia.com/a'}, {'imageUrl': 'https://cdn1.munpia.com/b'}]}
+        warnings = []
+        data = p.save_episode(self.root, item, entry, False, lambda url: self.png,
+                              c.atomic_write, lambda: None, warnings.append, episode_digits=4)
+        self.assertIn('합성 본문', data.decode())
+        for number in (1, 2):
+            name = 'images/0003_시험 제목_이미지_%03d.png' % number
+            self.assertTrue((self.root / name).is_file())
+            self.assertIn(name, data.decode())
+        self.assertTrue(warnings)  # PC image positions are explicitly reported.
+        def failed_fetch(url):
+            raise ValueError('image unavailable')
+        def failed_cache(path, data):
+            if str(path).endswith('.json'):
+                raise OSError('cache unavailable')
+            c.atomic_write(path, data)
+        data = p.save_episode(self.root, item, entry, False, failed_fetch,
+                              failed_cache, lambda: None, warnings.append, episode_digits=4)
+        self.assertIn('합성 본문', data.decode())
+        self.assertIn('[삽화: 받지 못함]', data.decode())
+
     def test_cover_info_txt_and_embedded_epub(self):
         state = self.run_book()
         self.assertEqual(state['completed'],1)
@@ -169,3 +193,4 @@ class PublicationTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+

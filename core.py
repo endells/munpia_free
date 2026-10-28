@@ -946,7 +946,8 @@ class Engine:
                             else:
                                 entry, _ = client.entry(nid, item['id'])
                             data = publication.save_episode(target_folder, item, entry, config['include_author_comment'],
-                                                            client.image, atomic_write, client.check, self.warn, previous)
+                                                            client.image, atomic_write, client.check, self.warn, previous,
+                                                            episode_digits=int(config.get('episode_digits', 5)))
                             filename = '%0*d_%s.txt' % (int(config.get('episode_digits', 5)), int(item.get('num') or 0), safe_name(item.get('title', '')))
                             path = Path(existing['path']) if existing else folder / filename
                             path.resolve().relative_to(root)

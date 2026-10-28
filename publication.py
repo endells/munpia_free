@@ -100,7 +100,7 @@ class BodyParser(HTMLParser):
 
 def body_blocks(entry, include_comment=False):
     content = clean(entry.get('content')).replace('\r\n', '\n').replace('\r', '\n')
-    attachments = entry.get('attachments') or []
+    attachments = [a for a in (entry.get('attachments') or []) if isinstance(a, dict)]
     def picture(match):
         key = match.group(1).strip()
         found = next((a for a in attachments if str(a.get('id', '')) == key), None)
@@ -123,6 +123,13 @@ def body_blocks(entry, include_comment=False):
             blocks.append(dict(type='image', **parser.images[int(marker.group(1))]))
         elif part.strip():
             blocks.append({'type': 'text', 'text': re.sub(r'\n{4,}', '\n\n\n', part).strip()})
+    if entry.get('_source') == 'pc':
+        used = {b.get('url') for b in blocks if b['type'] == 'image'}
+        for attachment in attachments:
+            url = attachment.get('imageUrl') or attachment.get('url') or attachment.get('src') or ''
+            if not url or url not in used:
+                blocks.append({'type': 'image', 'url': url, 'alt': '삽화', 'unplaced': True})
+                used.add(url)
     if include_comment and entry.get('authorComment'):
         blocks.append({'type': 'text', 'text': '[작가의 말]'})
         blocks.extend(body_blocks({'content': entry['authorComment'], 'attachments': attachments}))
@@ -164,34 +171,41 @@ def media_complete(folder, row):
     return bool(cache and all(b.get('src') and valid_image(folder, b) for b in cache['blocks'] if b['type'] == 'image'))
 
 
-def save_episode(folder, item, entry, include_comment, image_fetch, write, check, warn, previous=None):
+def save_episode(folder, item, entry, include_comment, image_fetch, write, check, warn, previous=None, episode_digits=5):
     blocks = body_blocks(entry, include_comment)
     old = {b.get('url'): b for b in (previous or {}).get('blocks', []) if b['type'] == 'image'}
+    from .core import safe_name
+    image_number = 0
     for index, block in enumerate(blocks):
         check()
         if block['type'] != 'image':
             continue
+        image_number += 1
+        if block.get('unplaced'):
+            warn('회차 %s: PC 삽화의 본문 위치를 확인할 수 없어 본문 끝에 첨부합니다.' % item['id'])
         prior = old.get(block['url'])
-        if prior and valid_image(folder, prior):
-            block.update(src=prior['src'], sha256=prior['sha256'])
-            continue
         if not block['url']:
-            warn('회차 %s: 삽화 주소를 찾지 못했습니다.' % item['id'])
+            warn('회차 %s: 삽화 주소를 찾지 못했습니다. 텍스트는 저장합니다.' % item['id'])
             continue
         try:
-            data, ext = decode_image(image_fetch(block['url']))
-            relative = 'images/%s_%03d.%s' % (item['id'], index + 1, ext)
+            raw = safe_path(folder, prior['src']).read_bytes() if prior and valid_image(folder, prior) else image_fetch(block['url'])
+            data, ext = decode_image(raw)
+            relative = 'images/%0*d_%s_이미지_%03d.%s' % (int(episode_digits), int(item.get('num') or 0),
+                                                        safe_name(item.get('title', '')), image_number, ext)
             write(safe_path(folder, relative), data)
             block.update(src=relative, sha256=digest(data))
         except (ValueError, OSError) as exc:
-            warn('회차 %s: 삽화 저장 실패 (%s)' % (item['id'], str(exc)))
+            warn('회차 %s: 삽화 저장 실패, 텍스트는 저장합니다 (%s)' % (item['id'], str(exc)))
     title = heading(item.get('num'), item.get('title'))
     text_parts = [b['text'] if b['type'] == 'text' else '[삽화: %s]' % b.get('src', '받지 못함') for b in blocks]
     data = (title + '\n\n' + '\n\n'.join(text_parts).strip() + '\n').encode('utf-8')
     cache = {'version': 1, 'title': title, 'txt_sha256': digest(data), 'blocks': blocks,
-             'source': {k: entry.get(k) for k in ('content', 'attachments', 'authorComment')}}
+             'source': {k: entry.get(k) for k in ('content', 'attachments', 'authorComment', '_source')}}
     # Cache first; a canceled or failed TXT write cannot match this cache's hash.
-    write(cache_path(folder, item['id']), json.dumps(cache, ensure_ascii=False).encode('utf-8'))
+    try:
+        write(cache_path(folder, item['id']), json.dumps(cache, ensure_ascii=False).encode('utf-8'))
+    except OSError as exc:
+        warn('회차 %s: 삽화 캐시 저장 실패, 텍스트는 저장합니다 (%s)' % (item['id'], exc))
     return data
 
 
