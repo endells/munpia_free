@@ -221,3 +221,19 @@ class BookFolderTests(unittest.TestCase):
             self.assertFalse((root / 'Latest [1]').exists())
             for name in ('A [1]', 'B [1]'):
                 self.assertEqual((root / name / 'keep.txt').read_text(), name)
+
+    def test_warning_title_is_stored_with_originating_book(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = c.Engine(Path(tmp) / 'test.db')
+            engine.history.remember_book('1', '첫 작품')
+            engine.select_book_context('1')
+            engine.warn('작품 1 회차 중복')
+            engine.update(last_error='파일 오류')
+            self.assertIn('첫 작품', engine.snapshot()['last_warning'])
+            self.assertIn('첫 작품', engine.snapshot()['last_error'])
+            engine.select_book_context('2')
+            engine.warn('작품 2 조회 실패')
+            self.assertNotIn('첫 작품', engine.snapshot()['last_warning'])
+            engine.update(error_title='최신 제목')
+            engine.warn('작품 2 경고')
+            self.assertIn('최신 제목', engine.snapshot()['last_warning'])
